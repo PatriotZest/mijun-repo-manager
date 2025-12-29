@@ -1,0 +1,4 @@
+#!/bin/bash
+cd "$(dirname "$0")"
+mvn -q compile
+java -cp "target/classes:target/dependency/*" com.mijun.libmijun "$@"
