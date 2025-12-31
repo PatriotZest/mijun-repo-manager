@@ -17,7 +17,7 @@
         <maven.compiler.source>11</maven.compiler.source>
         <maven.compiler.target>11</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <exec.mainClass>com.mijun.Main</exec.mainClass>
+        <exec.mainClass>com.mijun.libmijun</exec.mainClass>
     </properties>
     
     <dependencies>
@@ -74,7 +74,7 @@
                 <artifactId>exec-maven-plugin</artifactId>
                 <version>3.1.0</version>
                 <configuration>
-                    <mainClass>com.mijun.Main</mainClass>
+                    <mainClass>com.mijun.libmijun</mainClass>
                 </configuration>
             </plugin>
             
@@ -105,7 +105,7 @@
                         <configuration>
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>com.mijun.Main</mainClass>
+                                    <mainClass>com.mijun.libmijun</mainClass>
                                 </transformer>
                             </transformers>
                             <finalName>mijun</finalName>
