@@ -21,7 +21,7 @@
         <artifactId>exec-maven-plugin</artifactId>
         <version>3.1.0</version>
         <configuration>
-          <mainClass>com.mijun.Main</mainClass>
+          <mainClass>com.mijun.libmijun</mainClass>
         </configuration>
       </plugin>
       <plugin>
@@ -36,7 +36,7 @@
             <configuration>
               <transformers>
                 <transformer>
-                  <mainClass>com.mijun.Main</mainClass>
+                  <mainClass>com.mijun.libmijun</mainClass>
                 </transformer>
               </transformers>
               <finalName>mijun</finalName>
@@ -71,7 +71,7 @@
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <maven.compiler.target>11</maven.compiler.target>
-    <exec.mainClass>com.mijun.Main</exec.mainClass>
+    <exec.mainClass>com.mijun.libmijun</exec.mainClass>
     <maven.compiler.source>11</maven.compiler.source>
   </properties>
 </project>
