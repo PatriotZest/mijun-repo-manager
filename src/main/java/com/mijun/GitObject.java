@@ -1,7 +1,9 @@
 package com.mijun;
 
 import java.util.zip.*;
-import java.util.zip.DataFormatException;
+
+import com.mijun.libmijun.GitRepository;
+
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.io.ByteArrayOutputStream;
@@ -26,50 +28,59 @@ public abstract class GitObject {
         this.data = null;
     }
 
-    
+    public abstract byte[] type();
+
     public abstract byte[] serialize();
 
     public abstract void deserialize(byte[] data);
 
-    public Object object_read(String repo, byte[] sha) {
-    /*  Path path = repo_file(repo, "objects", sha.toString().substring(0, 2), sha..toString().substring(2, sha.length));
-        byte[] raw = GitObject.decompress(Files.readAllBytes(path));
-        int indexType = 0;
-        for (int i = 0; i < raw.length; i++) {
-            if(raw[i] == (byte) ' ') {
-                indexType = i;
-                break;
+    public static GitObject object_read(GitRepository repo, byte[] sha) {
+        try {
+            Path path = libmijun.repoFile(repo, false, "objects", sha.toString().substring(0, 2), sha.toString().substring(2, sha.length));
+            byte[] raw = GitObject.decompress(Files.readAllBytes(path));
+            int indexType = 0;
+            
+            for (int i = 0; i < raw.length; i++) {
+                if(raw[i] == (byte) ' ') {
+                    indexType = i;
+                    break;
+                }
             }
-        }
-        byte[] fmt = new byte[indexType - 1];
-        for (int i = 0; i < indexType; i++) {
-            fmt[i] = raw[i];
-        }
-        
-        int compareIndex = 0;
-        for (int i = 0; i < indexType; i++) {
-            if (raw[i] == '\x00') {
-                compareIndex = i;
-                break;
+            byte[] fmt = new byte[indexType - 1];
+            for (int i = 0; i < indexType; i++) {
+                fmt[i] = raw[i];
             }
+            
+            int compareIndex = 0; 
+            for (int i = 0; i < indexType; i++) {
+                if (raw[i] == '0') {
+                    compareIndex = i;
+                    break;
+                }
+            }
+            
+            String rawString = GitObject.decode(raw);
+            int size = Integer.parseInt(rawString.substring(indexType, compareIndex));
+            if (size != raw.length - compareIndex - 1) {
+                throw new IllegalArgumentException("Malformed length");
+            }
+            
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            for (int i = compareIndex + 1; i < raw.length; i++) {
+                out.write(raw[i]);
+            }
+            byte[] rawSlice = out.toByteArray();
+            // fk python
+            GitObject c;
+            switch(fmt.toString()){
+                case "blob": c = new GitBlob(rawSlice); break;
+                // {Misha you need to add other data types here}
+                default: throw new IllegalArgumentException("No type matched");
+            }
+            return c;
+        } catch (IOException e) {
+            System.out.println("No bueno");
         }
-        
-        String rawString = GitObject.decode(raw);
-        int size = Integer.parseInt(rawString.substring(indexType, compareIndex));
-        if (size != raw.length - compareIndex - 1) {
-            throw new Exception("Malformed object: bad length")
-        }
-
-        // fk python
-        Class<? extends GitObject> c;
-        switch(fmt){
-            case 'blob': c = new GitBlob(data); break;
-            default: throw new IllegalArgumentException("No type matched");
-        }
-
-        return c;
-    */
-        
         return null;
     }
 
@@ -94,7 +105,7 @@ public abstract class GitObject {
         return null;
     }
 
-    public static byte[] object_write(GitObject obj, String repo) {
+    public static byte[] object_write(GitObject obj, GitRepository repo) {
         try {
             byte[] data = obj.serialize();
             ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -106,19 +117,25 @@ public abstract class GitObject {
             byte[] result = out.toByteArray();
             MessageDigest md = MessageDigest.getInstance("SHA-1");
             byte[] sha = md.digest(result);
-        /*  Path path = repo_file(repo, "objects", sha.toString().substring(0, 2), sha.toString().substring(2, sha.length), mkdir = True );
-            if (path doesnt exist) {
-                Files.write(GitObject.compress(result));
-            }        
-        */
+            Path path = libmijun.repoFile(repo, true, "objects", sha.toString().substring(0, 2), sha.toString().substring(2));    
+            if (Files.notExists(path)) {
+                Files.createFile(path);
+                Files.write(path, GitObject.compress(result));
+            }
             return sha;
         } catch (IOException e) {
             System.out.println("no bueno with IOException");
         } catch (NoSuchAlgorithmException e) {
             System.out.println("No algorithm exists like this, but SHA-1 always exists?");
         }
+        
         return null;
     }
+    
+    public static byte[] object_find(GitRepository repo, byte[] name, byte[] fmt, boolean follow) {
+        return name;
+    }
+
     public static byte[] compress(byte[] byteInput) {
         // fixed size of 20 bytes, possible pitfall being that its not a ze dynamic byte array? idk how about that gng
         byte[] output = new byte[20];

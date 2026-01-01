@@ -2,11 +2,13 @@ package com.mijun;
 
 // argparse
 import net.sourceforge.argparse4j.*;
+import net.sourceforge.argparse4j.inf.ArgumentAction;
 import net.sourceforge.argparse4j.inf.ArgumentParser;
 import net.sourceforge.argparse4j.inf.ArgumentParserException;
 import net.sourceforge.argparse4j.inf.Namespace;
 import net.sourceforge.argparse4j.inf.Subparser;
 import net.sourceforge.argparse4j.inf.Subparsers;
+import net.sourceforge.argparse4j.impl.Arguments;
 
 // configparser
 import org.ini4j.*;
@@ -67,6 +69,29 @@ public class libmijun {
         // "find" command to locate repository root
         Subparser findParser = subparsers.addParser("find").help("Find root of Mijun repository");
 
+        // cat-file parser
+        Subparser catParser = subparsers.addParser("cat-file").help("Raw content of repository objects");
+        catParser.addArgument("type")
+                .metavar("type")
+                .choices("blob", "commit", "tag", "tree")
+                .help("Specify the type");
+        catParser.addArgument("object")
+                .metavar("object")
+                .help("The object to display");
+        
+        Subparser hashParser = subparsers.addParser("hash-object").help("Compute object id and optionally create a blob");
+        hashParser.addArgument("-t")
+                .metavar("type")
+                .dest("type")
+                .choices("blob", "commit", "tag", "tree")
+                .setDefault("blob")
+                .help("Specify the type");
+        hashParser.addArgument("-w")
+                .dest("write")
+                .action(net.sourceforge.argparse4j.impl.Arguments.storeTrue())
+                .help("write object into the db");
+        hashParser.addArgument("path")
+                .help("Read object from path");
         try {
             Namespace ns = parser.parseArgs(args);
             String command = ns.getString("command");
@@ -75,7 +100,7 @@ public class libmijun {
                 parser.printHelp();
                 System.exit(1);
             }
-
+            
             switch (command) {
                 case "init":
                     Path p = Paths.get(ns.getString("path")).toAbsolutePath();
@@ -87,6 +112,20 @@ public class libmijun {
                     GitRepository foundRepo = repoFind();
                     System.out.println("Repository found at: " + foundRepo.workTree.toAbsolutePath());
                     break;
+
+                case "cat-file":
+                    repo = repoFind();
+                    byte[] objByte = ns.getString("object").getBytes();
+                    byte[] fmt = ns.getString("type").getBytes();
+                    cat_file(repo, objByte, fmt);
+                    break;
+                
+                case "hash-object":
+                    if (!ns.getString("write").isEmpty()) {
+                        repo = repoFind();
+                    } else {
+                        repo = null;
+                    }
 
                 default:
                     System.err.println("Bad command: " + command);
@@ -173,7 +212,7 @@ public class libmijun {
         if (dir != null) return repoPath(repo, parts);
         return null;
     }
-
+    
     /* 
        REPO CREATE (INIT)
     */
@@ -235,5 +274,32 @@ public class libmijun {
     // { Arjun, use this function for your GitObject }
     static GitRepository repoFind() throws IOException {
         return repoFind(Paths.get(System.getProperty("user.dir")), true);
+    }
+    static void cat_file(GitRepository repo, byte[] objByte, byte[] fmt) {
+        try {
+            byte[] sha = GitObject.object_find(repo, objByte, fmt, true);
+            GitObject obj = GitObject.object_read(repo, sha);
+
+            System.out.write(obj.serialize());
+        } catch (IOException e) {
+            System.out.println("no bueno io");
+        }
+    }
+
+    static byte[] object_hash(Path path, byte[] fmt, GitRepository repo) {
+        try {
+            GitObject obj = null;
+            byte[] data = Files.readAllBytes(path);
+            // {Misha you need to add commit here :3}
+            switch(fmt.toString()) {
+                case "blob":
+                    obj = new GitBlob(data);
+                    break;
+            }
+            return GitObject.object_write(obj, repo);
+        } catch (IOException e) {
+            System.out.println("no bueno io error");
+        }
+        return null;
     }
 }
