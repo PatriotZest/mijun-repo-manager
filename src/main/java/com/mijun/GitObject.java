@@ -47,21 +47,21 @@ public abstract class GitObject {
                     break;
                 }
             }
-            byte[] fmt = new byte[indexType - 1];
+            byte[] fmt = new byte[indexType];
             for (int i = 0; i < indexType; i++) {
                 fmt[i] = raw[i];
             }
             
             int compareIndex = 0; 
-            for (int i = 0; i < indexType; i++) {
-                if (raw[i] == '0') {
+            for (int i = indexType + 1; i < raw.length; i++) {
+                if (raw[i] == 0) {
                     compareIndex = i;
                     break;
                 }
             }
             
             String rawString = GitObject.decode(raw);
-            int size = Integer.parseInt(rawString.substring(indexType, compareIndex));
+            int size = Integer.parseInt(rawString.substring(indexType + 1, compareIndex));
             if (size != raw.length - compareIndex - 1) {
                 throw new IllegalArgumentException("Malformed length");
             }
@@ -141,50 +141,39 @@ public abstract class GitObject {
     }
     
     public static byte[] object_find(GitRepository repo, byte[] name, byte[] fmt, boolean follow) {
-        return name;
+        return libmijun.fromHex(name);
     }
 
     public static byte[] compress(byte[] byteInput) {
-        // fixed size of 20 bytes, possible pitfall being that its not a ze dynamic byte array? idk how about that gng
-        byte[] output = new byte[20];
-
-        // java.util.zip shi        
-        Deflater compressor = new Deflater();
-        compressor.setInput(byteInput);
-        compressor.finish();
-
-        int compressedDataLength = compressor.deflate(output);
-        compressor.end();
-        return output;
-    }
-
-    public static byte[] compress(String input) {
-        // get ze string and convert into ze bytes
-        byte[] byteInput = input.getBytes();
+        // dynamic byte size now
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        byte[] buffer = new byte[1024];
         
-        // fixed size of 100 bytes, possible pitfall being that its not a ze dynamic byte array? idk how about that gng
-        byte[] output = new byte[100];
-
-        // java.util.zip shi        
         Deflater compressor = new Deflater();
         compressor.setInput(byteInput);
         compressor.finish();
+        
+        while(!compressor.finished()) {
+            int count = compressor.deflate(buffer);
+            out.write(buffer, 0, count);
+        }
 
-        int compressedDataLength = compressor.deflate(output);
         compressor.end();
-        return output;
+        return out.toByteArray();
     }
 
     public static byte[] decompress(byte[] output) {
         try {
             Inflater decompressor = new Inflater();
             decompressor.setInput(output);
-
-            // same pitfall of dynamic byte size
-            byte[] result = new byte[100];
-            int resultLength = decompressor.inflate(result);
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buffer = new byte[1024];
+            while (!decompressor.finished()) {
+                int count = decompressor.inflate(buffer);
+                out.write(buffer, 0, count);
+            }
             decompressor.end();
-            return result;
+            return out.toByteArray();
         } catch (DataFormatException e) {
             System.out.println("Wrong format, no bueno");
         }

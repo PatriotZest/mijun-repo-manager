@@ -127,9 +127,9 @@ public class libmijun {
                     } else {
                         repo = null;
                     }
-                    Path path = ns.get("path");
+                    Path path = Paths.get(ns.getString("path"));
                     byte[] sha = object_hash(path, type, repo);
-                    System.out.println(sha);
+                    System.out.println(toHex(sha));
                     break;
 
                 default:
@@ -262,7 +262,7 @@ public class libmijun {
     static GitRepository repoFind(Path startDir, boolean required) throws IOException {
         Path path = startDir.toRealPath();
 
-        if (Files.isDirectory(path.resolve(".git"))) {
+        if (Files.isDirectory(path.resolve(".mijun"))) {
             return new GitRepository(path, false);
         }
 
@@ -318,5 +318,14 @@ public class libmijun {
             sb.append(String.format("%02x", b));
         }
         return sb.toString();
+    }
+
+    static byte[] fromHex(byte[] hex) {
+        int len = hex.length;
+        byte[] out = new byte[len / 2];
+        for (int i = 0; i < len; i+=2) {
+            out[i / 2] = (byte) ((Character.digit(hex[i], 16) << 4) + (Character.digit(hex[i + 1], 16)));
+        }
+        return out;
     }
 }
