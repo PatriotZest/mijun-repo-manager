@@ -36,7 +36,8 @@ public abstract class GitObject {
 
     public static GitObject object_read(GitRepository repo, byte[] sha) {
         try {
-            Path path = libmijun.repoFile(repo, false, "objects", sha.toString().substring(0, 2), sha.toString().substring(2, sha.length));
+            String shaString = libmijun.toHex(sha);
+            Path path = libmijun.repoFile(repo, false, "objects", shaString.substring(0, 2), shaString.substring(2));
             byte[] raw = GitObject.decompress(Files.readAllBytes(path));
             int indexType = 0;
             
@@ -72,7 +73,7 @@ public abstract class GitObject {
             byte[] rawSlice = out.toByteArray();
             // fk python
             GitObject c;
-            switch(fmt.toString()){
+            switch(new String(fmt)){
                 case "blob": c = new GitBlob(rawSlice); break;
                 // {Misha you need to add other data types here}
                 default: throw new IllegalArgumentException("No type matched");
@@ -109,7 +110,7 @@ public abstract class GitObject {
         try {
             byte[] data = obj.serialize();
             ByteArrayOutputStream out = new ByteArrayOutputStream();
-            out.write(obj.getClass().toString().getBytes());
+            out.write(obj.type());
             out.write(' ');
             out.write(String.valueOf(data.length).getBytes());
             out.write(0);
@@ -117,7 +118,14 @@ public abstract class GitObject {
             byte[] result = out.toByteArray();
             MessageDigest md = MessageDigest.getInstance("SHA-1");
             byte[] sha = md.digest(result);
-            Path path = libmijun.repoFile(repo, true, "objects", sha.toString().substring(0, 2), sha.toString().substring(2));    
+            String shaString = libmijun.toHex(sha);
+            Path path = libmijun.repoFile(
+                repo, 
+                true,
+                "objects",
+                shaString.substring(0, 2),
+                shaString.substring(2)
+            );    
             if (Files.notExists(path)) {
                 Files.createFile(path);
                 Files.write(path, GitObject.compress(result));

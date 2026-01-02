@@ -2,10 +2,10 @@ package com.mijun;
 
 public class GitBlob extends GitObject {
     public static final byte[] fmt = "blob".getBytes(); 
-    byte[] blobdata;
+    
 
     public GitBlob(byte[] data) {
-        this.blobdata = data;
+        this.data = data;
     }
 
     @Override

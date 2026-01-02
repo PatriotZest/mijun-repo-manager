@@ -121,11 +121,16 @@ public class libmijun {
                     break;
                 
                 case "hash-object":
-                    if (!ns.getString("write").isEmpty()) {
+                    byte[] type = ns.getString("type").getBytes();
+                    if (ns.getBoolean("write")) {
                         repo = repoFind();
                     } else {
                         repo = null;
                     }
+                    Path path = ns.get("path");
+                    byte[] sha = object_hash(path, type, repo);
+                    System.out.println(sha);
+                    break;
 
                 default:
                     System.err.println("Bad command: " + command);
@@ -152,7 +157,7 @@ public class libmijun {
 
         GitRepository(Path path, boolean force) throws IOException {
             this.workTree = path.toAbsolutePath();
-            this.gitDir = path.resolve(".git");
+            this.gitDir = path.resolve(".mijun");
 
             if (!force && !Files.isDirectory(gitDir)) {
                 throw new RuntimeException("Not a Mijun repository: " + path);
@@ -271,7 +276,7 @@ public class libmijun {
     }
 
     // find repository root from current directory
-    // { Arjun, use this function for your GitObject }
+    // { Done -Arjun }
     static GitRepository repoFind() throws IOException {
         return repoFind(Paths.get(System.getProperty("user.dir")), true);
     }
@@ -291,9 +296,12 @@ public class libmijun {
             GitObject obj = null;
             byte[] data = Files.readAllBytes(path);
             // {Misha you need to add commit here :3}
-            switch(fmt.toString()) {
+            switch(new String(fmt)) {
                 case "blob":
                     obj = new GitBlob(data);
+                    break;
+                default:
+                    System.out.println("some shi is 100% going wrong");
                     break;
             }
             return GitObject.object_write(obj, repo);
@@ -301,5 +309,14 @@ public class libmijun {
             System.out.println("no bueno io error");
         }
         return null;
+    }
+
+    // this shi helps in converting byte[] to string (in hex format which git uses) so that i can use substring fyi
+    static String toHex(byte[] sha) {
+        StringBuilder sb = new StringBuilder();
+        for (byte b: sha) {
+            sb.append(String.format("%02x", b));
+        }
+        return sb.toString();
     }
 }
