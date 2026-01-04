@@ -73,9 +73,13 @@ public abstract class GitObject {
             byte[] rawSlice = out.toByteArray();
             // fk python
             GitObject c;
+            // {Misha you need to add commit here :3} - DONE
             switch(new String(fmt)){
                 case "blob": c = new GitBlob(rawSlice); break;
-                // {Misha you need to add other data types here}
+                case "commit": c = new GitCommit(rawSlice); break;
+                // case "tree": c = new GitTree(rawSlice); break;
+                // case "tag": c = new GitTag(rawSlice); break;
+                
                 default: throw new IllegalArgumentException("No type matched");
             }
             return c;
