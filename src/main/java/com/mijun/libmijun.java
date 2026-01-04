@@ -2,11 +2,13 @@ package com.mijun;
 
 // argparse
 import net.sourceforge.argparse4j.*;
+import net.sourceforge.argparse4j.inf.ArgumentAction;
 import net.sourceforge.argparse4j.inf.ArgumentParser;
 import net.sourceforge.argparse4j.inf.ArgumentParserException;
 import net.sourceforge.argparse4j.inf.Namespace;
 import net.sourceforge.argparse4j.inf.Subparser;
 import net.sourceforge.argparse4j.inf.Subparsers;
+import net.sourceforge.argparse4j.impl.Arguments;
 
 // configparser
 import org.ini4j.*;
@@ -67,6 +69,37 @@ public class libmijun {
         // "find" command to locate repository root
         Subparser findParser = subparsers.addParser("find").help("Find root of Mijun repository");
 
+        // cat-file parser
+        Subparser catParser = subparsers.addParser("cat-file").help("Raw content of repository objects");
+        catParser.addArgument("type")
+                .metavar("type")
+                .choices("blob", "commit", "tag", "tree")
+                .help("Specify the type");
+        catParser.addArgument("object")
+                .metavar("object")
+                .help("The object to display");
+        
+        Subparser hashParser = subparsers.addParser("hash-object").help("Compute object id and optionally create a blob");
+        hashParser.addArgument("-t")
+                .metavar("type")
+                .dest("type")
+                .choices("blob", "commit", "tag", "tree")
+                .setDefault("blob")
+                .help("Specify the type");
+        hashParser.addArgument("-w")
+                .dest("write")
+                .action(net.sourceforge.argparse4j.impl.Arguments.storeTrue())
+                .help("write object into the db");
+        hashParser.addArgument("path")
+                .help("Read object from path");
+        
+        // log parser
+        Subparser logParser = subparsers.addParser("log").help("Display commit history");
+        logParser.addArgument("commit")
+                .nargs("?")
+                .setDefault("HEAD")
+                .help("Commit to start at (default: HEAD)");
+
         try {
             Namespace ns = parser.parseArgs(args);
             String command = ns.getString("command");
@@ -75,17 +108,82 @@ public class libmijun {
                 parser.printHelp();
                 System.exit(1);
             }
-
+            
             switch (command) {
                 case "init":
                     Path p = Paths.get(ns.getString("path")).toAbsolutePath();
                     GitRepository repo = repoCreate(p);
                     System.out.println("Initialized empty Mijun repository in " + p);
+                    
+                    // temp checker starts
+                    System.out.println("DEBUG: about to create initial commit");
+                    // temporary initial commit creation
+                    createInitialCommit(repo);
+                    System.out.println("DEBUG: done creating initial commit");
+                    // temp checker ends
+
                     break;
 
                 case "find":
                     GitRepository foundRepo = repoFind();
                     System.out.println("Repository found at: " + foundRepo.workTree.toAbsolutePath());
+                    break;
+
+                case "cat-file":
+                    repo = repoFind();
+                    byte[] objByte = ns.getString("object").getBytes();
+                    byte[] fmt = ns.getString("type").getBytes();
+                    cat_file(repo, objByte, fmt);
+                    break;
+                
+                // {Arjun added some exception handling here -- running into NPE issues here }
+                case "hash-object":
+                    byte[] type = ns.getString("type").getBytes();
+                    Path path = Paths.get(ns.getString("path")).toAbsolutePath();
+                    repo = null;
+
+                    if (ns.getBoolean("write")) {
+                        try {
+                            repo = repoFind();
+                        } catch (IOException e) {
+                            System.err.println("Error: Could not find repository to write object into.");
+                            System.exit(1);
+                        }
+                    }
+                    byte[] sha = object_hash(path, type, repo);
+
+                    if (sha == null) {
+                        System.err.println("Error: Could not hash object.");
+                        System.exit(1);
+                    }
+                    System.out.println(toHex(sha));
+                    break;
+                
+                case "log":
+                    repo = repoFind();
+                    String start = ns.getString("commit");
+
+                    String commitSha;
+
+                    if (start.equals("HEAD")) {
+                        Path head = repoPath(repo, "HEAD");
+                        String ref = Files.readString(head).trim();
+                        if (ref.startsWith("ref: ")) {
+                            String refPath = ref.substring(5);
+                            Path refFullPath = repoPath(repo, refPath);
+                            commitSha = Files.readString(refFullPath).strip();
+                        } else {
+                            commitSha = ref;
+                        }
+                    } else {
+                        commitSha = start;
+                    }
+
+                    System.out.println("digraph log {");
+                    System.out.println("node [shape=box]");
+                    GitCommit.logGraphviz(repo, commitSha, new java.util.HashSet<>());
+                    System.out.println("}");
+                    
                     break;
 
                 default:
@@ -113,7 +211,7 @@ public class libmijun {
 
         GitRepository(Path path, boolean force) throws IOException {
             this.workTree = path.toAbsolutePath();
-            this.gitDir = path.resolve(".git");
+            this.gitDir = path.resolve(".mijun");
 
             if (!force && !Files.isDirectory(gitDir)) {
                 throw new RuntimeException("Not a Mijun repository: " + path);
@@ -173,7 +271,7 @@ public class libmijun {
         if (dir != null) return repoPath(repo, parts);
         return null;
     }
-
+    
     /* 
        REPO CREATE (INIT)
     */
@@ -216,9 +314,9 @@ public class libmijun {
        REPO FIND
     */
     static GitRepository repoFind(Path startDir, boolean required) throws IOException {
-        Path path = startDir.toRealPath();
+        Path path = startDir.toAbsolutePath();
 
-        if (Files.isDirectory(path.resolve(".git"))) {
+        if (Files.isDirectory(path.resolve(".mijun"))) {
             return new GitRepository(path, false);
         }
 
@@ -232,8 +330,111 @@ public class libmijun {
     }
 
     // find repository root from current directory
-    // { Arjun, use this function for your GitObject }
+    // { Done -Arjun }
     static GitRepository repoFind() throws IOException {
-        return repoFind(Paths.get(System.getProperty("user.dir")), true);
+        return repoFind(Paths.get(System.getProperty("user.dir")).toAbsolutePath(), true);
+    }
+    
+    static void cat_file(GitRepository repo, byte[] objByte, byte[] fmt) {
+        try {
+            byte[] sha = GitObject.object_find(repo, objByte, fmt, true);
+            GitObject obj = GitObject.object_read(repo, sha);
+
+            System.out.write(obj.serialize());
+        } catch (IOException e) {
+            System.out.println("no bueno io");
+        }
+    }
+
+    static byte[] object_hash(Path path, byte[] fmt, GitRepository repo) {
+        try {
+            GitObject obj = null;
+            byte[] data = Files.readAllBytes(path);
+            // {Misha - DONE }
+            switch(new String(fmt)) {
+                case "blob":
+                    obj = new GitBlob(data);
+                    break;
+
+                case "commit":
+                    obj = new GitCommit(data);
+                    break;
+                
+                // Yet to be implemented
+                case "tree":
+                    throw new UnsupportedOperationException("Not implemented yet");
+                
+                // Yet to be implemented
+                case "tag":
+                    throw new UnsupportedOperationException("Not implemented yet");
+        
+                default:
+                    System.out.println("some shi is 100% going wrong");
+                    break;
+            }
+            return GitObject.object_write(obj, repo);
+        } catch (IOException e) {
+            System.out.println("no bueno io error");
+        }
+        return null;
+    }
+
+    // this shi helps in converting byte[] to string (in hex format which git uses) so that i can use substring fyi
+    static String toHex(byte[] sha) {
+        StringBuilder sb = new StringBuilder();
+        for (byte b: sha) {
+            sb.append(String.format("%02x", b));
+        }
+        return sb.toString();
+    }
+
+    static byte[] fromHex(byte[] hex) {
+        int len = hex.length;
+        byte[] out = new byte[len / 2];
+        for (int i = 0; i < len; i+=2) {
+            out[i / 2] = (byte) ((Character.digit(hex[i], 16) << 4) + (Character.digit(hex[i + 1], 16)));
+        }
+        return out;
+    }
+
+    static byte[] fromHexString(String hex) {
+        int len = hex.length();
+        byte[] out = new byte[len / 2];
+        for (int i = 0; i < len; i += 2) {
+            out[i / 2] =
+              (byte) ((Character.digit(hex.charAt(i), 16) << 4)
+                    + Character.digit(hex.charAt(i + 1), 16));
+        }
+        return out;
+    }
+
+    /* 
+       TEMPORARY INITIAL COMMIT CREATION
+    */
+
+    // {Arjun, I can't test commit and log until unit 9, so I have put this temporary func to test the workings up till unit 5}
+    static void createInitialCommit(GitRepository repo) throws IOException {
+        String treeSha = "0000000000000000000000000000000000000001"; 
+        String commitContent = "tree " + treeSha + "\n\nInitial commit\n";
+
+        //Create GitCommit object
+        GitCommit commit = new GitCommit(commitContent.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        // Write commit to object store
+        byte[] sha = GitObject.object_write(commit, repo);
+        String shaHex = toHex(sha);
+
+        // Ensure refs/heads/master - should print master 
+        Path headPath = repoPath(repo, "refs", "heads", "master");
+        if (!Files.exists(headPath.getParent())) {
+            Files.createDirectories(headPath.getParent());
+        }
+        Files.writeString(headPath, shaHex + "\n");
+
+        // update HEAD file to point to master if not already
+        Path headFile = repoPath(repo, "HEAD");
+        Files.writeString(headFile, "ref: refs/heads/master\n");
+
+        System.out.println("Created initial commit: " + shaHex);
     }
 }
