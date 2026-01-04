@@ -413,6 +413,17 @@ public class libmijun {
     */
 
     // {Arjun, I can't test commit and log until unit 9, so I have put this temporary func to test the workings up till unit 5}
+
+    /*
+       if command - ./mijun log - outputs
+       
+       digraph log {
+       node [shape=box]
+        c_<sha> [label="<shortsha>: Initial commit"]
+       }
+
+       Unit 5 has executed right
+    */
     static void createInitialCommit(GitRepository repo) throws IOException {
         String treeSha = "0000000000000000000000000000000000000001"; 
         String commitContent = "tree " + treeSha + "\n\nInitial commit\n";
