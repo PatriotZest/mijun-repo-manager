@@ -1,4 +1,6 @@
 com/mijun/GitObject.class
+com/mijun/GitCommit.class
 com/mijun/GitBlob.class
 com/mijun/libmijun$GitRepository.class
+com/mijun/GitTree.class
 com/mijun/libmijun.class
