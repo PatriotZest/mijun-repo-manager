@@ -236,7 +236,9 @@ public class libmijun {
                     GitTree.tree_checkout(repo, tobj, Paths.get(ns.getString("path")).toRealPath());       
                     break;
 
-
+                case "ls-tree":
+                    repo = repoFind();
+                    GitTree.ls_tree(repo,ns.getString("tree").getBytes() , ns.getBoolean("recursive"), null);
                 default:
                     System.err.println("Bad command: " + command);
                     System.exit(1);

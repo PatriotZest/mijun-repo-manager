@@ -98,11 +98,11 @@ public class GitTree extends GitObject {
                 out.write(raw[i]);
             }
             if (out.size() == 5) {
-                out.write('0');
+                out.write(0);
             }
 
             for (int i = 0; i < raw.length; i++) {
-                if (raw[i] == '0') {
+                if (raw[i] == 0) {
                     y = i;
                     break;
                 }
@@ -147,7 +147,7 @@ public class GitTree extends GitObject {
                 out.write(i.mode);
                 out.write(' ');
                 out.write(i.path.toString().getBytes());
-                out.write('0');
+                out.write(0);
                 String shaString = libmijun.toHex(i.sha);
                 BigInteger sha = new BigInteger(shaString, 16);
                 out.write(sha.toByteArray());
@@ -165,9 +165,11 @@ public class GitTree extends GitObject {
         String type = null;
         for (var item: obj.gitList) {
             if (item.mode.length == 5) {
-                type = item.mode.toString().substring(0,1);
+                String modeString = new String(item.mode);
+                type = modeString.substring(0,1);
             } else {
-                type = item.mode.toString().substring(0,2);
+                String modeString = new String(item.mode);
+                type = modeString.substring(0,2);
             }
 
             switch(type) {
