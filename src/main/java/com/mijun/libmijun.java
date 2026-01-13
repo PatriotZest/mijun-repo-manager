@@ -1,4 +1,5 @@
 package com.mijun;
+import java.util.Arrays;
 
 // argparse
 import net.sourceforge.argparse4j.*;
@@ -100,6 +101,20 @@ public class libmijun {
                 .setDefault("HEAD")
                 .help("Commit to start at (default: HEAD)");
 
+        Subparser treeParser = subparsers.addParser("ls-tree").help("Pretty-print a tree object");
+        treeParser.addArgument("-r")
+                .dest("recursive")
+                .action(net.sourceforge.argparse4j.impl.Arguments.storeTrue())
+                .help("recursve");
+        treeParser.addArgument("tree")
+                .help("A tree like object or sum shi");
+
+        Subparser checkoutParser = subparsers.addParser("checkout").help("Checkout a commmit inside of a directory");
+        checkoutParser.addArgument("commit")
+                .help("Commit or tree to checkout");
+        checkoutParser.addArgument("path")
+                .help("The empty dir to checkout on");
+
         try {
             Namespace ns = parser.parseArgs(args);
             String command = ns.getString("command");
@@ -183,9 +198,47 @@ public class libmijun {
                     System.out.println("node [shape=box]");
                     GitCommit.logGraphviz(repo, commitSha, new java.util.HashSet<>());
                     System.out.println("}");
-                    
                     break;
 
+                case "checkout":
+                    repo = repoFind();
+
+                    GitObject obj = GitObject.object_read(repo, GitObject.object_find(repo, ns.getString("commit").getBytes(), null,true));
+                
+                    if (obj.type() == "commit".getBytes()) {
+                        GitCommit cobj = (GitCommit) obj;
+                        
+                        byte[] treeKey = "tree".getBytes();
+                        byte[] treeSha = null;
+
+                        // ai-generated no idea if works or not
+                        for (var e: cobj.kvlm.entrySet()) {
+                            if (Arrays.equals(e.getKey(), treeKey)) {
+                                treeSha = (byte[]) e.getValue();
+                            }
+                        }
+                        cobj = (GitCommit) GitObject.object_read(repo, treeSha);
+                    }
+
+                    if (Files.exists(Paths.get(ns.getString("path")))) {
+                        if (!Files.isDirectory(Paths.get(ns.getString("path")))) {
+                            throw new IllegalArgumentException("YOU OUTTA UR MIND - not a dir");
+                        }
+                        File dir = new File(ns.getString("path"));
+                        String[] files = dir.list();
+                        if (!(files != null && files.length == 0)) {
+                            throw new IllegalArgumentException("YOU OUTTA UR MIND - not empty dir");
+                        }
+                    } else {
+                        Files.createDirectories(Paths.get(ns.getString("path")));
+                    }
+                    GitTree tobj = (GitTree) obj;   
+                    GitTree.tree_checkout(repo, tobj, Paths.get(ns.getString("path")).toRealPath());       
+                    break;
+
+                case "ls-tree":
+                    repo = repoFind();
+                    GitTree.ls_tree(repo,ns.getString("tree").getBytes() , ns.getBoolean("recursive"), null);
                 default:
                     System.err.println("Bad command: " + command);
                     System.exit(1);
@@ -350,7 +403,7 @@ public class libmijun {
         try {
             GitObject obj = null;
             byte[] data = Files.readAllBytes(path);
-            // {Misha - DONE }
+            
             switch(new String(fmt)) {
                 case "blob":
                     obj = new GitBlob(data);
@@ -362,7 +415,8 @@ public class libmijun {
                 
                 // Yet to be implemented
                 case "tree":
-                    throw new UnsupportedOperationException("Not implemented yet");
+                    obj = new GitTree();
+                    break;
                 
                 // Yet to be implemented
                 case "tag":
