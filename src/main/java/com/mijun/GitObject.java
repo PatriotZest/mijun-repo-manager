@@ -1,5 +1,8 @@
 package com.mijun;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import java.util.zip.*;
 
 import com.mijun.libmijun.GitRepository;
@@ -8,6 +11,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -77,8 +81,8 @@ public abstract class GitObject {
             switch(new String(fmt)){
                 case "blob": c = new GitBlob(rawSlice); break;
                 case "commit": c = new GitCommit(rawSlice); break;
-                // case "tree": c = new GitTree(rawSlice); break;
-                // case "tag": c = new GitTag(rawSlice); break;
+                case "tree": c = new GitTree(rawSlice); break;
+                case "tag": c = new GitTag(rawSlice); break;
                 
                 default: throw new IllegalArgumentException("No type matched");
             }
@@ -88,19 +92,24 @@ public abstract class GitObject {
         }
         return null;
     }
-
+    
+    // running into error here , making a change {Arjun}
     public static byte[] object_write(GitObject obj) {
         try {
             byte[] data = obj.serialize();
+
             ByteArrayOutputStream out = new ByteArrayOutputStream();
-            out.write(obj.getClass().toString().getBytes());
+            out.write(obj.type());
             out.write(' ');
             out.write(String.valueOf(data.length).getBytes());
             out.write(0);
             out.write(data);
+
             byte[] result = out.toByteArray();
+
             MessageDigest md = MessageDigest.getInstance("SHA-1");
             byte[] sha = md.digest(result);
+
             return sha;
         } catch (IOException e) {
             System.out.println("no bueno with IOException");
@@ -144,9 +153,102 @@ public abstract class GitObject {
         return null;
     }
     
-    public static byte[] object_find(GitRepository repo, byte[] name, byte[] fmt, boolean follow) {
-        return libmijun.fromHex(name);
+    // {Arjun, completed this method}
+    // 7.6 object_find
+    // finds an object by name and type, optionally following tags and commits
+    public static byte[] object_find(GitRepository repo, String name, byte[] fmt, boolean follow) {
+        List<byte[]> candidates = object_resolve(repo, name);
+        
+        if (candidates.isEmpty()) {
+            throw new IllegalArgumentException("No such reference");
+        }
+
+        byte[] sha = candidates.get(0);
+        
+        if (fmt == null) {
+            return sha;
+        }
+        
+        while (true) {
+            GitObject obj = object_read(repo, sha);
+            
+            if (obj == null) return null;
+
+            if (Arrays.equals(obj.type(), fmt)) {
+                return sha;
+            }
+
+            if (!follow) {
+                return null;
+            }
+
+            if (Arrays.equals(obj.type(), "tag".getBytes())) {
+                GitTag tag = (GitTag) obj;
+                sha = ((byte[]) tag.kvlm.get("object".getBytes()));
+                continue;
+            }
+
+            if (Arrays.equals(obj.type(), "commit".getBytes()) && Arrays.equals(fmt, "tree".getBytes())) {
+                GitCommit commit = (GitCommit) obj;
+                sha = ((byte[]) commit.kvlm.get("tree".getBytes()));
+                continue;
+            }
+            return null;
+        }
     }
+
+
+    static List<byte[]> object_resolve(
+        GitRepository repo,
+        String name) {
+
+        List<byte[]> out = new ArrayList<>();
+
+        if (name.equals("HEAD")) {
+            try {
+                byte[] sha = GitRef.refResolve(repo, "HEAD");
+                if (sha != null) out.add(sha);
+            } catch (IOException ignored) {}
+            return out;
+        }   
+
+        if (looksLikeHex(name)) {
+            name = name.toLowerCase();
+            Path objDir = libmijun.repoPath(
+                    repo, "objects", name.substring(0, 2));
+
+            if (Files.exists(objDir)) {
+                try (DirectoryStream<Path> ds =
+                        Files.newDirectoryStream(objDir)) {
+                    for (Path p : ds) {
+                        if (p.getFileName().toString()
+                                .startsWith(name.substring(2))) {
+                            out.add(libmijun.fromHexString(
+                                    name.substring(0, 2) +
+                                    p.getFileName().toString()));
+                        }
+                    }
+                } catch (IOException ignored) {}
+            }
+        }
+
+        try {
+            byte[] tag = GitRef.refResolve(repo,
+                    "refs/tags/" + name);
+            if (tag != null) out.add(tag);
+
+            byte[] branch = GitRef.refResolve(repo,
+                "refs/heads/" + name);
+
+            if (branch != null) out.add(branch);
+        } catch (IOException ignored) {}
+        
+        if (out.isEmpty() && !looksLikeHex(name)) {
+            return out;
+        }
+        return out;
+    }
+
 
     public static byte[] compress(byte[] byteInput) {
         // dynamic byte size now
@@ -186,5 +288,18 @@ public abstract class GitObject {
 
     public static String decode(byte[] result) {
         return new String(result);
+    }
+    
+    // helper method to check if a string looks like a hex SHA-1
+    static boolean looksLikeHex(String s) {
+        if (s.length() < 4) return false;
+        for (char c : s.toCharArray()) {
+            if (!((c >= '0' && c <= '9') ||
+                (c >= 'a' && c <= 'f') ||
+                (c >= 'A' && c <= 'F'))) {
+                return false;
+            }
+        }
+        return true;
     }
 }

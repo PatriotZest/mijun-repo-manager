@@ -1,5 +1,7 @@
 package com.mijun;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 // argparse
 import net.sourceforge.argparse4j.*;
@@ -114,6 +116,33 @@ public class libmijun {
                 .help("Commit or tree to checkout");
         checkoutParser.addArgument("path")
                 .help("The empty dir to checkout on");
+        
+        // Parser for show-ref command
+        Subparser showRefParser =
+        subparsers.addParser("show-ref")
+                  .help("List references");
+
+        // Parser for tag command
+        Subparser tagParser = subparsers.addParser("tag")
+        .help("List and create tags");
+        
+        tagParser.addArgument("-a")
+        .dest("annotated")
+        .action(Arguments.storeTrue());
+        
+        tagParser.addArgument("name").nargs("?");
+        
+        tagParser.addArgument("object")
+        .nargs("?")
+        .setDefault("HEAD");
+        
+        // Parser for rev-parse command
+        Subparser revParser = subparsers.addParser("rev-parse");
+        revParser.addArgument("--wyag-type")
+                .dest("type")
+                .choices("blob","commit","tree","tag");
+        revParser.addArgument("name");
+
 
         try {
             Namespace ns = parser.parseArgs(args);
@@ -129,14 +158,6 @@ public class libmijun {
                     Path p = Paths.get(ns.getString("path")).toAbsolutePath();
                     GitRepository repo = repoCreate(p);
                     System.out.println("Initialized empty Mijun repository in " + p);
-                    
-                    // temp checker starts
-                    System.out.println("DEBUG: about to create initial commit");
-                    // temporary initial commit creation
-                    createInitialCommit(repo);
-                    System.out.println("DEBUG: done creating initial commit");
-                    // temp checker ends
-
                     break;
 
                 case "find":
@@ -203,9 +224,10 @@ public class libmijun {
                 case "checkout":
                     repo = repoFind();
 
-                    GitObject obj = GitObject.object_read(repo, GitObject.object_find(repo, ns.getString("commit").getBytes(), null,true));
+                    GitObject obj = GitObject.object_read(repo, GitObject.object_find(repo, ns.getString("commit"), null,true));
                 
-                    if (obj.type() == "commit".getBytes()) {
+                    // making a change here {Arjun}
+                    if (Arrays.equals(obj.type(), "commit".getBytes())) {
                         GitCommit cobj = (GitCommit) obj;
                         
                         byte[] treeKey = "tree".getBytes();
@@ -238,7 +260,37 @@ public class libmijun {
 
                 case "ls-tree":
                     repo = repoFind();
-                    GitTree.ls_tree(repo,ns.getString("tree").getBytes() , ns.getBoolean("recursive"), null);
+                    GitTree.ls_tree(repo,ns.getString("tree"), ns.getBoolean("recursive"), null);
+                    break;
+                
+                case "show-ref":
+                    repo = repoFind();
+                    Map<String, Object> refs = GitRef.refList(repo, null);
+                    showRef(refs, "refs");
+                    break;
+
+                case "tag":
+                    repo = repoFind();
+                    if (ns.getString("name") == null) {
+                        refs = GitRef.refList(repo, null);
+                        showRef((Map<String, Object>) refs.get("tags"), "refs/tags");
+                    } else {
+                        tagCreate(repo, ns.getString("name"), ns.getString("object"),
+                         ns.getBoolean("annotated"));
+                    }
+                    break;
+                    
+                case "rev-parse":
+                    repo = repoFind();
+                    byte[] revType = null;
+                    if (ns.getString("type") != null) {
+                        revType = ns.getString("type").getBytes();
+                    }
+                    byte[] revSha = GitObject.object_find(repo,
+                            ns.getString("name"), revType, true);
+                    System.out.println(toHex(revSha));
+                    break;
+
                 default:
                     System.err.println("Bad command: " + command);
                     System.exit(1);
@@ -390,7 +442,7 @@ public class libmijun {
     
     static void cat_file(GitRepository repo, byte[] objByte, byte[] fmt) {
         try {
-            byte[] sha = GitObject.object_find(repo, objByte, fmt, true);
+            byte[] sha = GitObject.object_find(repo, new String(objByte), fmt, true);
             GitObject obj = GitObject.object_read(repo, sha);
 
             System.out.write(obj.serialize());
@@ -413,14 +465,13 @@ public class libmijun {
                     obj = new GitCommit(data);
                     break;
                 
-                // Yet to be implemented
                 case "tree":
                     obj = new GitTree();
                     break;
                 
-                // Yet to be implemented
                 case "tag":
-                    throw new UnsupportedOperationException("Not implemented yet");
+                    obj = new GitTag();
+                    break;
         
                 default:
                     System.out.println("some shi is 100% going wrong");
@@ -462,44 +513,41 @@ public class libmijun {
         return out;
     }
 
-    /* 
-       TEMPORARY INITIAL COMMIT CREATION
-    */
-
-    // {Arjun, I can't test commit and log until unit 9, so I have put this temporary func to test the workings up till unit 5}
-
-    /*
-       if command - ./mijun log - outputs
-       
-       digraph log {
-       node [shape=box]
-        c_<sha> [label="<shortsha>: Initial commit"]
-       }
-
-       Unit 5 has executed right
-    */
-    static void createInitialCommit(GitRepository repo) throws IOException {
-        String treeSha = "0000000000000000000000000000000000000001"; 
-        String commitContent = "tree " + treeSha + "\n\nInitial commit\n";
-
-        //Create GitCommit object
-        GitCommit commit = new GitCommit(commitContent.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-
-        // Write commit to object store
-        byte[] sha = GitObject.object_write(commit, repo);
-        String shaHex = toHex(sha);
-
-        // Ensure refs/heads/master - should print master 
-        Path headPath = repoPath(repo, "refs", "heads", "master");
-        if (!Files.exists(headPath.getParent())) {
-            Files.createDirectories(headPath.getParent());
+    // recursive function to show refs
+    static void showRef(Map<String, Object> refs, String prefix) {
+    for (var e : refs.entrySet()) {
+        if (e.getValue() instanceof byte[]) {
+            System.out.println(
+                toHex((byte[]) e.getValue()) + " " +
+                prefix + "/" + e.getKey());
+        } else {
+            showRef((Map<String, Object>) e.getValue(),
+                    prefix + "/" + e.getKey());
+            }
         }
-        Files.writeString(headPath, shaHex + "\n");
+    }
+    
+    // create tag
+    static void tagCreate(GitRepository repo, String name, String ref, boolean annotated) throws IOException {
 
-        // update HEAD file to point to master if not already
-        Path headFile = repoPath(repo, "HEAD");
-        Files.writeString(headFile, "ref: refs/heads/master\n");
+        byte[] sha = GitObject.object_find(
+            repo, ref, null, true);
 
-        System.out.println("Created initial commit: " + shaHex);
+        if (annotated) {
+            GitTag tag = new GitTag();
+            tag.kvlm = new LinkedHashMap<>();
+            tag.kvlm.put("object".getBytes(), sha);
+            tag.kvlm.put("type".getBytes(), "commit".getBytes());
+            tag.kvlm.put("tag".getBytes(), name.getBytes());
+            tag.kvlm.put("tagger".getBytes(),
+                "mijun <mijun@example.com>".getBytes());
+            tag.kvlm.put(null,
+                "Annotated tag\n".getBytes());
+
+            byte[] tagSha = GitObject.object_write(tag, repo);
+            GitRef.refCreate(repo, "tags/" + name, tagSha);
+        } else {
+            GitRef.refCreate(repo, "tags/" + name, sha);
+        }
     }
 }

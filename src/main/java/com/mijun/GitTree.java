@@ -9,7 +9,7 @@ import java.nio.file.OpenOption;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
-
+import java.util.Arrays;
 import com.mijun.libmijun.GitRepository;
 
 public class GitTree extends GitObject {
@@ -18,6 +18,11 @@ public class GitTree extends GitObject {
 
     public GitTree() {
         this.gitList = new ArrayList<>();
+    }
+ 
+    // {Arjun, I'm adding a constructor here to deserialize tree objects}
+    public GitTree(byte[] data) {
+        super(data);
     }
 
     @Override
@@ -86,7 +91,11 @@ public class GitTree extends GitObject {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         ByteArrayOutputStream pathByte = new ByteArrayOutputStream();
         ByteArrayOutputStream shaByte = new ByteArrayOutputStream();
-        for (int i = 0; i < raw.length; i++) {
+
+        // {Arjun, bug here - parsing fails for tree with more than one entry}
+
+        // fixed
+        for (int i = start; i < raw.length; i++) {
             if (raw[i] == ' ') {
                 x = i;
                 break;
@@ -100,8 +109,9 @@ public class GitTree extends GitObject {
             if (out.size() == 5) {
                 out.write(0);
             }
-
-            for (int i = 0; i < raw.length; i++) {
+            
+            // same issue here - fixed
+            for (int i = start; i < raw.length; i++) {
                 if (raw[i] == 0) {
                     y = i;
                     break;
@@ -148,9 +158,12 @@ public class GitTree extends GitObject {
                 out.write(' ');
                 out.write(i.path.toString().getBytes());
                 out.write(0);
+
                 String shaString = libmijun.toHex(i.sha);
                 BigInteger sha = new BigInteger(shaString, 16);
-                out.write(sha.toByteArray());
+
+                // change 
+                out.write(i.sha);
             }
             return out.toByteArray();
         } catch (IOException e) {
@@ -158,9 +171,14 @@ public class GitTree extends GitObject {
         }
         return null;
     }
-
-    static public void ls_tree(GitRepository repo, byte[] ref, boolean recursive, String prefix) {
+    // changed byte to String for ref
+    static public void ls_tree(GitRepository repo, String ref, boolean recursive, String prefix) {
         byte[] sha = object_find(repo, ref, fmt, true);
+
+        if (sha == null) {
+            throw new IllegalArgumentException("No such tree");
+        }
+
         GitTree obj = (GitTree) object_read(repo, sha);
         String type = null;
         for (var item: obj.gitList) {
@@ -178,8 +196,8 @@ public class GitTree extends GitObject {
                 case "12": type = "blob"; break;   // symlink? tf is that
                 case "16": type = "commit"; break;
             }
-
-            if(!(recursive && type == "tree")) {
+            // {Arjun, fixed the comparison here}
+            if(!(recursive && type.equals("tree"))) {
                 StringBuilder output = new StringBuilder();
                 for (int i = 0; i < (6 - item.mode.length); i++) {
                     output.append("0");
@@ -193,21 +211,23 @@ public class GitTree extends GitObject {
                 output.append(Path.of(prefix).resolve(item.path));
                 System.out.println(output);
             } else {
-                ls_tree(repo, item.sha, recursive, prefix + item.path.toString());
+                ls_tree(repo, libmijun.toHex(item.sha), recursive, prefix + item.path.toString());
             }
         }
     }
     static void tree_checkout(GitRepository repo, GitTree tree, Path path) {
         try {
             for (var item: tree.gitList) {
-                GitObject obj = (GitTree) object_read(repo, item.sha);
+                // {Arjun, sm issue here -- fixed}
+                GitObject obj = object_read(repo, item.sha);
                 String dest = path.toString() + item.path.toString();
-
-                if (obj.type() == "tree".getBytes()) {
+                
+                // {Arjun, fixed the comparison here}
+                if (Arrays.equals(obj.type(), "tree".getBytes())) {
                     Files.createDirectory(Paths.get(dest));
                     GitTree cobj = (GitTree) obj;
                     tree_checkout(repo, cobj, Paths.get(dest));
-                } else if (obj.type() == "blob".getBytes()) {
+                } else if (Arrays.equals(obj.type(), "blob".getBytes())) {
                     GitBlob bobj = (GitBlob) obj;
                     Files.write(Paths.get(dest), obj.data);
                 }
