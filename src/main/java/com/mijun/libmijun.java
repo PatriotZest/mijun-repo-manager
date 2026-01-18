@@ -115,6 +115,15 @@ public class libmijun {
         checkoutParser.addArgument("path")
                 .help("The empty dir to checkout on");
 
+        Subparser addParser = subparsers.addParser("ls-files").help("Lists all stage files");
+        addParser.addArgument("--verbose")
+                .action(net.sourceforge.argparse4j.impl.Arguments.storeTrue())
+                .help("Show everything");
+
+        Subparser checkIgnoreParser = subparsers.addParser("check-ignore").help("Check ignore paths");
+        checkIgnoreParser.addArgument("path")
+                .nargs("+")
+                .help("Paths to check");
         try {
             Namespace ns = parser.parseArgs(args);
             String command = ns.getString("command");
@@ -239,6 +248,21 @@ public class libmijun {
                 case "ls-tree":
                     repo = repoFind();
                     GitTree.ls_tree(repo,ns.getString("tree").getBytes() , ns.getBoolean("recursive"), null);
+                    break;
+                
+                case "ls-files":
+                    repo = repoFind();
+                    GitIndex index = GitIndex.index_read(repo);
+                    if (ns.getBoolean("--verbose")) {
+                        System.out.println("print something here");
+                    }
+                    // TODO: add shi
+                    break;
+                
+                case "check-ignore":
+                    repo = repoFind();
+
+                    break;
                 default:
                     System.err.println("Bad command: " + command);
                     System.exit(1);
