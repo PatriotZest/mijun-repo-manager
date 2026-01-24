@@ -4,12 +4,14 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.PathMatcher;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.nio.file.FileSystems;
 
 import com.mijun.libmijun.GitRepository;
 
@@ -124,13 +126,59 @@ public class GitIgnore {
         } catch (IOException e) {
             return null;
         }
-
-        public Boolean check_ignore1() {
-            Boolean result = null;
-        }
     }
+        public Boolean check_ignore1(Map<String, Boolean> rules, Path path) {
+            Boolean result = null;
+            for (Map.Entry<String, Boolean> entry: rules.entrySet()) {
+                PathMatcher matcher = FileSystems.getDefault().getPathMatcher(entry.getKey());
+                Boolean matches = matcher.matches(path);
+                if (matches) {
+                    result = entry.getValue();
+                }
+            }
+            
+            return result;
+        }
+
+        public Boolean check_ignore_scoped(Map<String, Boolean> rules, Path path) {
+            String parent = Paths.get(path.toString()).getParent().toString();
+            while (true) {
+                for (Map.Entry<String, Boolean> entry: rules.entrySet()) {
+                    if (parent.equals(entry.getKey())) {
+                        //result = check_ignore1(, path);
+                        return null;
+                    }
+                }
+            }
+            
+        }
+    
+        public Boolean check_ignore_absolute(Map<String, Boolean> rules, Path path) {
+            String parent = Paths.get(path.toString()).getParent().toString();
+            for (var ruleset: rules.entrySet()) {
+                //Boolean result = check_ignore1(rules, path);
+                //if (result != null) {
+                    //return result;
+                  //}
+            }
+            return false;
+        }
 
 
+        public Boolean check_ignore(GitIgnore rules, Path path) {
+            if (path.isAbsolute()) {
+                throw new IllegalArgumentException("This function is not relative to the repository");
+            }
 
-
+            //Boolean result = check_ignore_scoped(rules.scoped, path);
+            //if (result != null) {
+              //  return result;
+            //}
+            return null;
+            //return check_ignore_absolute(rules.absolute, path);
+        }
 }
+
+
+
+    

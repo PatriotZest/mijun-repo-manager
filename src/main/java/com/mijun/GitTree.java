@@ -9,6 +9,8 @@ import java.nio.file.OpenOption;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
 
 import com.mijun.libmijun.GitRepository;
 
@@ -216,5 +218,29 @@ public class GitTree extends GitObject {
             System.out.println("no bueno io exception");
         }
     }
+
+    public static Map<Path, byte[]> tree_to_dict(GitRepository repo, byte[] ref, String prefix) {
+        Map<Path, byte[]> ret = new HashMap<>();
+        byte[] fmt = "tree".getBytes();
+        byte[] tree_sha = object_find(repo, ref, fmt, false);
+        GitObject treeObject = object_read(repo, tree_sha);
+
+        GitTree tree = (GitTree) treeObject;
+        
+        for (var leaf: tree.gitList) {
+            Path full_path = Path.of(leaf.path.toString(), prefix);
+
+            boolean is_subtree = leaf.mode.toString().startsWith("04");
+
+            if (is_subtree) {
+                ret.putAll(tree_to_dict(repo, leaf.sha, full_path.toString()));
+            } else {
+                ret.put(full_path, leaf.sha);
+            }
+        }
+        return ret;
+    }
+    
+
 
 }
