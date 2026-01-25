@@ -119,10 +119,17 @@ public class libmijun {
         checkoutParser.addArgument("path")
                 .help("The empty dir to checkout on");
         
+        /** 
         Subparser addParser = subparsers.addParser("ls-files").help("Lists all stage files");
         addParser.addArgument("--verbose")
                 .action(net.sourceforge.argparse4j.impl.Arguments.storeTrue())
                 .help("Show everything");
+        **/ 
+
+        // Parser for add command
+        Subparser addParser = subparsers.addParser("add")
+                .help("Add file contents to the index");
+        addParser.addArgument("paths").nargs("+");
 
         // Parser for show-ref command
         Subparser showRefParser =
@@ -156,6 +163,17 @@ public class libmijun {
                 .help("Paths to check");
         
         Subparser statusParser = subparsers.addParser("status").help("Show working tree status");
+
+        Subparser writeTreeParser = subparsers.addParser("write-tree")
+        .help("Create a tree object from the index");
+
+        Subparser commitParser = subparsers.addParser("commit")
+        .help("Record changes to the repository");
+        commitParser.addArgument("-m")
+        .required(true)
+        .help("Commit message");
+
+
 
         try {
             Namespace ns = parser.parseArgs(args);
@@ -212,7 +230,7 @@ public class libmijun {
                     repo = repoFind();
                     String start = ns.getString("commit");
 
-                    String commitSha;
+                    String commitShaStr;
 
                     if (start.equals("HEAD")) {
                         Path head = repoPath(repo, "HEAD");
@@ -220,17 +238,17 @@ public class libmijun {
                         if (ref.startsWith("ref: ")) {
                             String refPath = ref.substring(5);
                             Path refFullPath = repoPath(repo, refPath);
-                            commitSha = Files.readString(refFullPath).strip();
+                            commitShaStr = Files.readString(refFullPath).strip();
                         } else {
-                            commitSha = ref;
+                            commitShaStr = ref;
                         }
                     } else {
-                        commitSha = start;
+                        commitShaStr = start;
                     }
 
                     System.out.println("digraph log {");
                     System.out.println("node [shape=box]");
-                    GitCommit.logGraphviz(repo, commitSha, new java.util.HashSet<>());
+                    GitCommit.logGraphviz(repo, commitShaStr, new java.util.HashSet<>());
                     System.out.println("}");
                     break;
 
@@ -322,6 +340,37 @@ public class libmijun {
                     index = GitIndex.index_read(repo);
 
                     break;
+                
+                case "add":
+                    repo = repoFind();
+                    GitIndex.add(repo, ns.getList("paths"));
+                    break;
+
+                case "write-tree":
+                    repo = repoFind();
+                    index = GitIndex.index_read(repo);
+                    byte[] treeSha = GitTree.tree_from_index(repo, index);
+                    System.out.println(toHex(treeSha));
+                    break;
+
+                case "commit":
+                    repo = repoFind();
+                    GitIndex index2 = GitIndex.index_read(repo);
+                    byte[] tree = GitTree.tree_from_index(repo, index2);
+
+                    byte[] parent = GitObject.object_find(repo, "HEAD", null, false);
+
+                    byte[] commitSha = GitCommit.commit_create(
+                        repo,
+                        tree,
+                        parent == null ? List.of() : List.of(parent),
+                        ns.getString("m")
+                    );
+
+                    GitRef.refCreate(repo, "heads/master", commitSha);
+                    System.out.println(toHex(commitSha));
+                    break;
+
 
                 default:
                     System.err.println("Bad command: " + command);
