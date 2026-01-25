@@ -274,7 +274,7 @@ public class GitTree extends GitObject {
         
         TreeNode root = new TreeNode();
 
-        // 1️⃣ Build directory tree
+        // Build directory tree
         for (GitIndexEntry e : index.entries) {
             String[] parts = e.name.split("/");
             TreeNode cur = root;
@@ -286,7 +286,7 @@ public class GitTree extends GitObject {
             cur.entry = e;
         }
 
-        // 2️⃣ Recursive writer
+        // Recursive writer
         Function<TreeNode, byte[]> writeTree = new Function<>() {
             @Override
             public byte[] apply(TreeNode node) {
