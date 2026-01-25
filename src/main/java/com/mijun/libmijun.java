@@ -262,12 +262,35 @@ public class libmijun {
                     if (ns.getBoolean("--verbose")) {
                         System.out.println("print something here");
                     }
-                    // TODO: add shi
+                    for (var e: index.entries) {
+                        System.out.println(e.name);
+                        if (ns.getBoolean("--verbose")) {
+                           Map<Integer, String> entryTypeMap = Map.of(
+                            0b1000, "regular file",
+                            0b1010, "symlink",
+                            0b1110, "git link"
+                           );
+                           String entryType = entryTypeMap.get(e.mode_type);
+                           System.out.println(entryType + " with perms: " + Integer.toOctalString(e.mode_perms));
+                           System.out.println(" on blob: " + e.sha);
+                           System.out.println(" device: " + e.dev + " inode: " + e.ino);
+                           System.out.println(" user: ");
+                           System.out.println("flags: stage = " + e.flag_stage);
+                        }
+                    }
                     break;
                 
                 case "check-ignore":
                     repo = repoFind();
-                    
+                    GitIgnore rules = new GitIgnore();
+                    rules = rules.gitignore_read(repo);
+                    List<String> paths = ns.getList("path");
+                    for (var pathStr: paths) {
+                        path = Paths.get(pathStr);
+                        if (rules.check_ignore(rules, path)) {
+                            System.out.println(pathStr);
+                        }
+                    }
                     break;
                 
                 case "status":
