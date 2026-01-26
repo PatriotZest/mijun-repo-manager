@@ -1,8 +1,12 @@
 com/mijun/GitTree$h_GitTreeLeaf.class
+com/mijun/GitIndex.class
 com/mijun/GitCommit.class
 com/mijun/GitTree$GitTreeLeaf.class
+com/mijun/GitIgnore$wrapper.class
+com/mijun/GitIgnore.class
 com/mijun/libmijun$GitRepository.class
 com/mijun/GitObject.class
 com/mijun/GitBlob.class
 com/mijun/GitTree.class
 com/mijun/libmijun.class
+com/mijun/GitIndexEntry.class

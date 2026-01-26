@@ -175,6 +175,18 @@ public class libmijun {
 
 
 
+        Subparser addParser = subparsers.addParser("ls-files").help("Lists all stage files");
+        addParser.addArgument("--verbose")
+                .action(net.sourceforge.argparse4j.impl.Arguments.storeTrue())
+                .help("Show everything");
+
+        Subparser checkIgnoreParser = subparsers.addParser("check-ignore").help("Check ignore paths");
+        checkIgnoreParser.addArgument("path")
+                .nargs("+")
+                .help("Paths to check");
+        
+        Subparser statusParser = subparsers.addParser("status").help("Show working tree status");
+        
         try {
             Namespace ns = parser.parseArgs(args);
             String command = ns.getString("command");
@@ -322,6 +334,9 @@ public class libmijun {
                     System.out.println(toHex(revSha));
                     break;
 
+                    GitTree.ls_tree(repo,ns.getString("tree").getBytes() , ns.getBoolean("recursive"), null);
+                    break;
+                
                 case "ls-files":
                     repo = repoFind();
                     GitIndex index = GitIndex.index_read(repo);
@@ -329,10 +344,35 @@ public class libmijun {
                         System.out.println("print something here");
                     }
                     // TODO: add shi
+                    for (var e: index.entries) {
+                        System.out.println(e.name);
+                        if (ns.getBoolean("--verbose")) {
+                           Map<Integer, String> entryTypeMap = Map.of(
+                            0b1000, "regular file",
+                            0b1010, "symlink",
+                            0b1110, "git link"
+                           );
+                           String entryType = entryTypeMap.get(e.mode_type);
+                           System.out.println(entryType + " with perms: " + Integer.toOctalString(e.mode_perms));
+                           System.out.println(" on blob: " + e.sha);
+                           System.out.println(" device: " + e.dev + " inode: " + e.ino);
+                           System.out.println(" user: ");
+                           System.out.println("flags: stage = " + e.flag_stage);
+                        }
+                    }
                     break;
                 
                 case "check-ignore":
                     repo = repoFind();
+                    GitIgnore rules = new GitIgnore();
+                    rules = rules.gitignore_read(repo);
+                    List<String> paths = ns.getList("path");
+                    for (var pathStr: paths) {
+                        path = Paths.get(pathStr);
+                        if (rules.check_ignore(rules, path)) {
+                            System.out.println(pathStr);
+                        }
+                    }
                     break;
                 
                 case "status":
@@ -641,6 +681,104 @@ public class libmijun {
         //}
         return null;
     }
+
+    public static void cmd_status_branch(GitRepository repo) {
+        String branch = branch_get_active(repo);
+        if (branch != null) {
+            System.out.println("On branch" + branch);
+        } else {
+            System.out.println("HEAD detached at" + GitObject.object_find(repo, null, null, false));
+        }
+    }
+
+    public static void cmd_status_head_index(GitRepository repo, GitIndex index) {
+        System.out.println("Changes to be committed: ");
+
+        Map<Path, byte[]> head = GitTree.tree_to_dict(repo, "HEAD".getBytes(), "");
+        for (var entry: index.entries) {
+            if (head.containsKey(Paths.get(entry.name))) {
+                if (head.get(Paths.get(entry.name)) != entry.sha.getBytes()) {
+                    System.out.println(" modified:" + entry.name);
+                }
+                head.remove(Paths.get(entry.name));
+            } else {
+                System.out.println(" added: " +  entry.name);
+            }
+        }
+
+        for (var entry: head.keySet()) {
+            System.out.println(" deleted: " + entry);
+        }
+    }
+
+    public void cmd_status_index_worktree(GitRepository repo, GitIndex index) {
+        try {
+            System.out.println("Changes not staged for commit:");
+            GitIgnore ignore = new GitIgnore(null, null);
+            ignore = ignore.gitignore_read(repo);
+
+            String gitdir_prefix = repo.gitDir.toString() + File.separator;
+
+            List<String> all_files = new ArrayList<>();
+            try (Stream<Path> stream = Files.walk(repo.workTree)) {
+                for (Path fullPath: stream.filter(Files::isRegularFile).toList()) {
+                    if (fullPath.startsWith(repo.gitDir)) {
+                        continue;
+                    }
+
+                    Path relPath = repo.workTree.relativize(fullPath);
+                    all_files.add(relPath.toString());
+                }
+            } catch (IOException e) {
+                System.out.println("err no bueno");
+            }
+
+            for (var entry: index.entries) {
+                Path full_path = Path.of(repo.workTree.toString(), entry.name);
+
+                if (Files.notExists(full_path)) {
+                    System.out.println(" deleted: " + entry.name);
+                } else {
+                    BasicFileAttributes st = Files.readAttributes(full_path, BasicFileAttributes.class);
+                    long ctime_ns = entry.ctime.getEpochSecond() * 1_000_000_000L + entry.ctime.getNano();
+                    long mtime_ns = entry.mtime.getEpochSecond() * 1_000_000_000L + entry.mtime.getNano();
+
+                    Instant ctimeInstant = st.creationTime().toInstant();
+                    Instant mtimeInstant = st.lastModifiedTime().toInstant();
+
+                    long fileCtimeNs = ctimeInstant.getEpochSecond() * 1_000_000_000L + ctimeInstant.getNano();
+                    long fileMtimeNs = mtimeInstant.getEpochSecond() * 1_000_000_000L + mtimeInstant.getNano();
+
+                    if (fileCtimeNs != ctime_ns || fileMtimeNs != mtime_ns) {
+                    byte[] fd = Files.readAllBytes(full_path);
+                    byte[] new_sha = object_hash(full_path, "blob".getBytes(), null);
+                    boolean same = entry.sha.equals(new_sha);
+
+                    if (!same) {
+                        System.out.println(" modified:" + entry.name);
+                    }
+                    }
+                }
+                if (all_files.contains(entry.name)) {
+                    all_files.remove(entry.name);
+                }
+            }
+            System.out.println();
+            System.out.println("Untracked files:");
+
+            for (var f: all_files) {
+                if (ignore.check_ignore(ignore, Path.of(f))) {
+                    System.out.println("" + f);
+                }
+            }
+        } catch (IOException e) {
+            System.out.println("no bueno");
+        }
+    }
+
+    /* 
+       TEMPORARY INITIAL COMMIT CREATION
+    */
 
     public static void cmd_status_branch(GitRepository repo) {
         String branch = branch_get_active(repo);

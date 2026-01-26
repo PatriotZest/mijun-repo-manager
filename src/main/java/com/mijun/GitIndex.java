@@ -7,9 +7,7 @@ import java.math.BigInteger;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -311,6 +309,8 @@ public class GitIndex {
 }
 
 }
+}
+
 
 class GitIndexEntry {
     Instant ctime = null;
@@ -343,3 +343,5 @@ class GitIndexEntry {
         this.name = name;
     }
 }
+
+
