@@ -175,17 +175,11 @@ public class libmijun {
 
 
 
-        Subparser addParser = subparsers.addParser("ls-files").help("Lists all stage files");
-        addParser.addArgument("--verbose")
+        Subparser lsParser = subparsers.addParser("ls-files").help("Lists all stage files");
+        lsParser.addArgument("--verbose")
                 .action(net.sourceforge.argparse4j.impl.Arguments.storeTrue())
                 .help("Show everything");
-
-        Subparser checkIgnoreParser = subparsers.addParser("check-ignore").help("Check ignore paths");
-        checkIgnoreParser.addArgument("path")
-                .nargs("+")
-                .help("Paths to check");
         
-        Subparser statusParser = subparsers.addParser("status").help("Show working tree status");
         
         try {
             Namespace ns = parser.parseArgs(args);
@@ -332,21 +326,19 @@ public class libmijun {
                     byte[] revSha = GitObject.object_find(repo,
                             ns.getString("name"), revType, true);
                     System.out.println(toHex(revSha));
-                    break;
-
                     GitTree.ls_tree(repo,ns.getString("tree").getBytes() , ns.getBoolean("recursive"), null);
                     break;
                 
                 case "ls-files":
                     repo = repoFind();
                     GitIndex index = GitIndex.index_read(repo);
-                    if (ns.getBoolean("--verbose")) {
+                    if (ns.getBoolean("verbose")) {
                         System.out.println("print something here");
                     }
                     // TODO: add shi
                     for (var e: index.entries) {
                         System.out.println(e.name);
-                        if (ns.getBoolean("--verbose")) {
+                        if (ns.getBoolean("verbose")) {
                            Map<Integer, String> entryTypeMap = Map.of(
                             0b1000, "regular file",
                             0b1010, "symlink",
@@ -398,7 +390,12 @@ public class libmijun {
                     GitIndex index2 = GitIndex.index_read(repo);
                     byte[] tree = GitTree.tree_from_index(repo, index2);
 
-                    byte[] parent = GitObject.object_find(repo, "HEAD", null, false);
+                    byte[] parent = null;
+                    try {
+                        parent = GitObject.object_find(repo, "HEAD", null, false);
+                    } catch (Exception e) {
+                        parent = null;
+                    }
 
                     byte[] commitSha = GitCommit.commit_create(
                         repo,
@@ -780,97 +777,97 @@ public class libmijun {
        TEMPORARY INITIAL COMMIT CREATION
     */
 
-    public static void cmd_status_branch(GitRepository repo) {
-        String branch = branch_get_active(repo);
-        if (branch != null) {
-            System.out.println("On branch" + branch);
-        } else {
-            System.out.println("HEAD detached at" + GitObject.object_find(repo, null, null, false));
-        }
-    }
+    // public static void cmd_status_branch(GitRepository repo) {
+    //     String branch = branch_get_active(repo);
+    //     if (branch != null) {
+    //         System.out.println("On branch" + branch);
+    //     } else {
+    //         System.out.println("HEAD detached at" + GitObject.object_find(repo, null, null, false));
+    //     }
+    // }
 
-    public static void cmd_status_head_index(GitRepository repo, GitIndex index) {
-        System.out.println("Changes to be committed: ");
+    // public static void cmd_status_head_index(GitRepository repo, GitIndex index) {
+    //     System.out.println("Changes to be committed: ");
 
-        Map<Path, byte[]> head = GitTree.tree_to_dict(repo, "HEAD".getBytes(), "");
-        for (var entry: index.entries) {
-            if (head.containsKey(Paths.get(entry.name))) {
-                if (head.get(Paths.get(entry.name)) != entry.sha.getBytes()) {
-                    System.out.println(" modified:" + entry.name);
-                }
-                head.remove(Paths.get(entry.name));
-            } else {
-                System.out.println(" added: " +  entry.name);
-            }
-        }
+    //     Map<Path, byte[]> head = GitTree.tree_to_dict(repo, "HEAD".getBytes(), "");
+    //     for (var entry: index.entries) {
+    //         if (head.containsKey(Paths.get(entry.name))) {
+    //             if (head.get(Paths.get(entry.name)) != entry.sha.getBytes()) {
+    //                 System.out.println(" modified:" + entry.name);
+    //             }
+    //             head.remove(Paths.get(entry.name));
+    //         } else {
+    //             System.out.println(" added: " +  entry.name);
+    //         }
+    //     }
 
-        for (var entry: head.keySet()) {
-            System.out.println(" deleted: " + entry);
-        }
-    }
+    //     for (var entry: head.keySet()) {
+    //         System.out.println(" deleted: " + entry);
+    //     }
+    // }
 
-    public void cmd_status_index_worktree(GitRepository repo, GitIndex index) {
-        try {
-            System.out.println("Changes not staged for commit:");
-            GitIgnore ignore = new GitIgnore(null, null);
-            ignore = ignore.gitignore_read(repo);
+    // public void cmd_status_index_worktree(GitRepository repo, GitIndex index) {
+    //     try {
+    //         System.out.println("Changes not staged for commit:");
+    //         GitIgnore ignore = new GitIgnore(null, null);
+    //         ignore = ignore.gitignore_read(repo);
 
-            String gitdir_prefix = repo.gitDir.toString() + File.separator;
+    //         String gitdir_prefix = repo.gitDir.toString() + File.separator;
 
-            List<String> all_files = new ArrayList<>();
-            try (Stream<Path> stream = Files.walk(repo.workTree)) {
-                for (Path fullPath: stream.filter(Files::isRegularFile).toList()) {
-                    if (fullPath.startsWith(repo.gitDir)) {
-                        continue;
-                    }
+    //         List<String> all_files = new ArrayList<>();
+    //         try (Stream<Path> stream = Files.walk(repo.workTree)) {
+    //             for (Path fullPath: stream.filter(Files::isRegularFile).toList()) {
+    //                 if (fullPath.startsWith(repo.gitDir)) {
+    //                     continue;
+    //                 }
 
-                    Path relPath = repo.workTree.relativize(fullPath);
-                    all_files.add(relPath.toString());
-                }
-            } catch (IOException e) {
-                System.out.println("err no bueno");
-            }
+    //                 Path relPath = repo.workTree.relativize(fullPath);
+    //                 all_files.add(relPath.toString());
+    //             }
+    //         } catch (IOException e) {
+    //             System.out.println("err no bueno");
+    //         }
 
-            for (var entry: index.entries) {
-                Path full_path = Path.of(repo.workTree.toString(), entry.name);
+    //         for (var entry: index.entries) {
+    //             Path full_path = Path.of(repo.workTree.toString(), entry.name);
 
-                if (Files.notExists(full_path)) {
-                    System.out.println(" deleted: " + entry.name);
-                } else {
-                    BasicFileAttributes st = Files.readAttributes(full_path, BasicFileAttributes.class);
-                    long ctime_ns = entry.ctime.getEpochSecond() * 1_000_000_000L + entry.ctime.getNano();
-                    long mtime_ns = entry.mtime.getEpochSecond() * 1_000_000_000L + entry.mtime.getNano();
+    //             if (Files.notExists(full_path)) {
+    //                 System.out.println(" deleted: " + entry.name);
+    //             } else {
+    //                 BasicFileAttributes st = Files.readAttributes(full_path, BasicFileAttributes.class);
+    //                 long ctime_ns = entry.ctime.getEpochSecond() * 1_000_000_000L + entry.ctime.getNano();
+    //                 long mtime_ns = entry.mtime.getEpochSecond() * 1_000_000_000L + entry.mtime.getNano();
 
-                    Instant ctimeInstant = st.creationTime().toInstant();
-                    Instant mtimeInstant = st.lastModifiedTime().toInstant();
+    //                 Instant ctimeInstant = st.creationTime().toInstant();
+    //                 Instant mtimeInstant = st.lastModifiedTime().toInstant();
 
-                    long fileCtimeNs = ctimeInstant.getEpochSecond() * 1_000_000_000L + ctimeInstant.getNano();
-                    long fileMtimeNs = mtimeInstant.getEpochSecond() * 1_000_000_000L + mtimeInstant.getNano();
+    //                 long fileCtimeNs = ctimeInstant.getEpochSecond() * 1_000_000_000L + ctimeInstant.getNano();
+    //                 long fileMtimeNs = mtimeInstant.getEpochSecond() * 1_000_000_000L + mtimeInstant.getNano();
 
-                    if (fileCtimeNs != ctime_ns || fileMtimeNs != mtime_ns) {
-                    byte[] fd = Files.readAllBytes(full_path);
-                    byte[] new_sha = object_hash(full_path, "blob".getBytes(), null);
-                    boolean same = entry.sha.equals(new_sha);
+    //                 if (fileCtimeNs != ctime_ns || fileMtimeNs != mtime_ns) {
+    //                 byte[] fd = Files.readAllBytes(full_path);
+    //                 byte[] new_sha = object_hash(full_path, "blob".getBytes(), null);
+    //                 boolean same = entry.sha.equals(new_sha);
 
-                    if (!same) {
-                        System.out.println(" modified:" + entry.name);
-                    }
-                    }
-                }
-                if (all_files.contains(entry.name)) {
-                    all_files.remove(entry.name);
-                }
-            }
-            System.out.println();
-            System.out.println("Untracked files:");
+    //                 if (!same) {
+    //                     System.out.println(" modified:" + entry.name);
+    //                 }
+    //                 }
+    //             }
+    //             if (all_files.contains(entry.name)) {
+    //                 all_files.remove(entry.name);
+    //             }
+    //         }
+    //         System.out.println();
+    //         System.out.println("Untracked files:");
 
-            for (var f: all_files) {
-                if (ignore.check_ignore(ignore, Path.of(f))) {
-                    System.out.println("" + f);
-                }
-            }
-        } catch (IOException e) {
-            System.out.println("no bueno");
-        }
-    }
+    //         for (var f: all_files) {
+    //             if (ignore.check_ignore(ignore, Path.of(f))) {
+    //                 System.out.println("" + f);
+    //             }
+    //         }
+    //     } catch (IOException e) {
+    //         System.out.println("no bueno");
+    //     }
+    // }
 }

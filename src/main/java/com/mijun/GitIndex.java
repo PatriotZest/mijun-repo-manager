@@ -7,7 +7,9 @@ import java.math.BigInteger;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -19,16 +21,13 @@ public class GitIndex {
     ArrayList<GitIndexEntry> entries;
     
     GitIndex(BigInteger version, ArrayList<GitIndexEntry> entries) {
-        if (entries.isEmpty()) {
-            entries = new ArrayList<>();
-        }
         this.version = version;
-        this.entries = entries;
+        this.entries = entries != null ? entries: new ArrayList<>();
     }
 
     GitIndex() {
         this.version = new BigInteger("2");
-        this.entries = null;
+        this.entries = new ArrayList<>();
     }
 
     static public GitIndex index_read(GitRepository repo) {
@@ -94,10 +93,10 @@ public class GitIndex {
                 int ino = ByteBuffer.wrap(content, idx + 20, 4).getInt();
 
                 // ?? no idea what this is for
-                int unused = ByteBuffer.wrap(content, idx + 16, 2).getInt();
+                int unused = ByteBuffer.wrap(content, idx + 16, 2).getShort() & 0xFFFF;
                 assert 0 == unused;
                 
-                int mode = ByteBuffer.wrap(content, idx + 26, 2).getInt();
+                int mode = ByteBuffer.wrap(content, idx + 26, 2).getShort() & 0xFFFF;
                 int mode_type = mode >> 12;
                 assert mode_type == 0b1000 || mode_type == 0b1010 || mode_type == 0b1110;
                 int mode_perms = mode & 0777;
@@ -112,10 +111,14 @@ public class GitIndex {
                 int fsize = ByteBuffer.wrap(content, idx + 36, 4).getInt();
 
                 //sha object id
-                String sha = String.format("%040x", ByteBuffer.wrap(content, idx + 40, 20).getInt());
+                ByteArrayOutputStream shaOut = new ByteArrayOutputStream();
+                for (int j = idx + 40; j < idx + 60; j++) {
+                    shaOut.write(content[j]);
+                }
+                String sha = libmijun.toHex(shaOut.toByteArray());
 
                 // ignored flag_stage
-                int flags = ByteBuffer.wrap(content, idx + 60, 2).getInt();
+                int flags = ByteBuffer.wrap(content, idx + 60, 2).getShort() & 0xFFFF;
 
                 // parse flags wth is happening here
                 boolean flag_assume_valid = (flags & 0b1000000000000000) != 0;
@@ -126,33 +129,25 @@ public class GitIndex {
                 int name_length = flags & 0b0000111111111111;
 
                 idx += 62;
+
                 byte[] raw_name = null;
                 if (name_length < 0xFFF) {
-                    assert content[idx + name_length] == 0x00;
-                    ByteArrayOutputStream outRawName = new ByteArrayOutputStream();
-                    for (int j = idx; j < idx + name_length; j++) {
-                        outRawName.write(content[i]);
-                    }
-                    idx += name_length + 1;
+                    raw_name = new byte[name_length];
+                    System.arraycopy(content, idx, raw_name, 0, name_length);
+                    idx += name_length + 1;  // Skip name + null byte
                 } else {
-                    // appaarently if path > 0xFFF bytes then it works but breaks if its mode_perms
-                    int null_idx = 0;
-                    for (i = 0; i < (idx + 0xFFF); i++) {
-                        if (content[i] == 0) {
-                            null_idx = i;
-                            break;
-                        }
+                    int null_idx = idx;
+                    while (null_idx < content.length && content[null_idx] != 0) {
+                        null_idx++;
                     }
-                    ByteArrayOutputStream outRawName = new ByteArrayOutputStream();
-                    for (i = idx; i < null_idx; i++) {
-                        outRawName.write(content[i]);
-                    }
-                    raw_name = outRawName.toByteArray();
+                    int actualLength = null_idx - idx;
+                    raw_name = new byte[actualLength];
+                    System.arraycopy(content, idx, raw_name, 0, actualLength);
                     idx = null_idx + 1;
                 }
 
                 String name = new String(raw_name, StandardCharsets.UTF_8);
-                idx = (int) (8 * Math.ceil(idx / 8));
+                idx = ((idx + 7) / 8) * 8;
                 entries.add(new GitIndexEntry(Instant.ofEpochSecond(ctime_s, ctime_ns), Instant.ofEpochSecond(mtime_s, mtime_ns), dev, ino, mode_type, mode_perms, uid, gid, fsize, sha, flag_assume_valid, flag_stage, name));
             }
             return new GitIndex(version, entries);
@@ -222,7 +217,7 @@ public class GitIndex {
                       boolean delete, boolean skipMissing) throws IOException {
 
         GitIndex index = index_read(repo);
-        Path worktree = libmijun.repoFile(repo, false).toAbsolutePath();
+        Path worktree = repo.workTree;
 
         Set<Path> absPaths = new HashSet<>();
         for (String p : paths) {
@@ -261,7 +256,7 @@ public class GitIndex {
         rm(repo, paths, false, true);
 
         GitIndex index = index_read(repo);
-        Path worktree = libmijun.repoFile(repo, false).toAbsolutePath();
+        Path worktree = repo.workTree;
 
         for (String p : paths) {
             Path abs = Path.of(p).toAbsolutePath();
@@ -309,7 +304,7 @@ public class GitIndex {
 }
 
 }
-}
+
 
 
 class GitIndexEntry {
@@ -343,5 +338,4 @@ class GitIndexEntry {
         this.name = name;
     }
 }
-
 
