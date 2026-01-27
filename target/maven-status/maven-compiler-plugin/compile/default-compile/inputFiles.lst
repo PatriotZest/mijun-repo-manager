@@ -1,5 +1,7 @@
 /Users/zinger/Desktop/Mijun/mijun-repo-manager/src/main/java/com/mijun/libmijun.java
 /Users/zinger/Desktop/Mijun/mijun-repo-manager/src/main/java/com/mijun/GitTree.java
+/Users/zinger/Desktop/Mijun/mijun-repo-manager/src/main/java/com/mijun/GitRef.java
+/Users/zinger/Desktop/Mijun/mijun-repo-manager/src/main/java/com/mijun/GitTag.java
 /Users/zinger/Desktop/Mijun/mijun-repo-manager/src/main/java/com/mijun/GitIgnore.java
 /Users/zinger/Desktop/Mijun/mijun-repo-manager/src/main/java/com/mijun/GitCommit.java
 /Users/zinger/Desktop/Mijun/mijun-repo-manager/src/main/java/com/mijun/GitBlob.java
