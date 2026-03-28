@@ -1,6 +1,7 @@
 package com.mijun;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -117,11 +118,44 @@ public class libmijun {
                 .help("Commit or tree to checkout");
         checkoutParser.addArgument("path")
                 .help("The empty dir to checkout on");
-
+        
+        /** 
         Subparser addParser = subparsers.addParser("ls-files").help("Lists all stage files");
         addParser.addArgument("--verbose")
                 .action(net.sourceforge.argparse4j.impl.Arguments.storeTrue())
                 .help("Show everything");
+        **/ 
+
+        // Parser for add command
+        Subparser addParser = subparsers.addParser("add")
+                .help("Add file contents to the index");
+        addParser.addArgument("paths").nargs("+");
+
+        // Parser for show-ref command
+        Subparser showRefParser =
+        subparsers.addParser("show-ref")
+                  .help("List references");
+
+        // Parser for tag command
+        Subparser tagParser = subparsers.addParser("tag")
+        .help("List and create tags");
+        
+        tagParser.addArgument("-a")
+        .dest("annotated")
+        .action(Arguments.storeTrue());
+        
+        tagParser.addArgument("name").nargs("?");
+        
+        tagParser.addArgument("object")
+        .nargs("?")
+        .setDefault("HEAD");
+        
+        // Parser for rev-parse command
+        Subparser revParser = subparsers.addParser("rev-parse");
+        revParser.addArgument("--wyag-type")
+                .dest("type")
+                .choices("blob","commit","tree","tag");
+        revParser.addArgument("name");
 
         Subparser checkIgnoreParser = subparsers.addParser("check-ignore").help("Check ignore paths");
         checkIgnoreParser.addArgument("path")
@@ -129,6 +163,23 @@ public class libmijun {
                 .help("Paths to check");
         
         Subparser statusParser = subparsers.addParser("status").help("Show working tree status");
+
+        Subparser writeTreeParser = subparsers.addParser("write-tree")
+        .help("Create a tree object from the index");
+
+        Subparser commitParser = subparsers.addParser("commit")
+        .help("Record changes to the repository");
+        commitParser.addArgument("-m")
+        .required(true)
+        .help("Commit message");
+
+
+
+        Subparser lsParser = subparsers.addParser("ls-files").help("Lists all stage files");
+        lsParser.addArgument("--verbose")
+                .action(net.sourceforge.argparse4j.impl.Arguments.storeTrue())
+                .help("Show everything");
+        
         
         try {
             Namespace ns = parser.parseArgs(args);
@@ -144,14 +195,6 @@ public class libmijun {
                     Path p = Paths.get(ns.getString("path")).toAbsolutePath();
                     GitRepository repo = repoCreate(p);
                     System.out.println("Initialized empty Mijun repository in " + p);
-                    
-                    // temp checker starts
-                    System.out.println("DEBUG: about to create initial commit");
-                    // temporary initial commit creation
-                    createInitialCommit(repo);
-                    System.out.println("DEBUG: done creating initial commit");
-                    // temp checker ends
-
                     break;
 
                 case "find":
@@ -193,7 +236,7 @@ public class libmijun {
                     repo = repoFind();
                     String start = ns.getString("commit");
 
-                    String commitSha;
+                    String commitShaStr;
 
                     if (start.equals("HEAD")) {
                         Path head = repoPath(repo, "HEAD");
@@ -201,26 +244,27 @@ public class libmijun {
                         if (ref.startsWith("ref: ")) {
                             String refPath = ref.substring(5);
                             Path refFullPath = repoPath(repo, refPath);
-                            commitSha = Files.readString(refFullPath).strip();
+                            commitShaStr = Files.readString(refFullPath).strip();
                         } else {
-                            commitSha = ref;
+                            commitShaStr = ref;
                         }
                     } else {
-                        commitSha = start;
+                        commitShaStr = start;
                     }
 
                     System.out.println("digraph log {");
                     System.out.println("node [shape=box]");
-                    GitCommit.logGraphviz(repo, commitSha, new java.util.HashSet<>());
+                    GitCommit.logGraphviz(repo, commitShaStr, new java.util.HashSet<>());
                     System.out.println("}");
                     break;
 
                 case "checkout":
                     repo = repoFind();
 
-                    GitObject obj = GitObject.object_read(repo, GitObject.object_find(repo, ns.getString("commit").getBytes(), null,true));
+                    GitObject obj = GitObject.object_read(repo, GitObject.object_find(repo, ns.getString("commit"), null,true));
                 
-                    if (obj.type() == "commit".getBytes()) {
+                    // making a change here {Arjun}
+                    if (Arrays.equals(obj.type(), "commit".getBytes())) {
                         GitCommit cobj = (GitCommit) obj;
                         
                         byte[] treeKey = "tree".getBytes();
@@ -253,18 +297,48 @@ public class libmijun {
 
                 case "ls-tree":
                     repo = repoFind();
+                    GitTree.ls_tree(repo, ns.getString("tree").getBytes(), ns.getBoolean("recursive"), null);
+                    break;
+                
+                case "show-ref":
+                    repo = repoFind();
+                    Map<String, Object> refs = GitRef.refList(repo, null);
+                    showRef(refs, "refs");
+                    break;
+
+                case "tag":
+                    repo = repoFind();
+                    if (ns.getString("name") == null) {
+                        refs = GitRef.refList(repo, null);
+                        showRef((Map<String, Object>) refs.get("tags"), "refs/tags");
+                    } else {
+                        tagCreate(repo, ns.getString("name"), ns.getString("object"),
+                         ns.getBoolean("annotated"));
+                    }
+                    break;
+                    
+                case "rev-parse":
+                    repo = repoFind();
+                    byte[] revType = null;
+                    if (ns.getString("type") != null) {
+                        revType = ns.getString("type").getBytes();
+                    }
+                    byte[] revSha = GitObject.object_find(repo,
+                            ns.getString("name"), revType, true);
+                    System.out.println(toHex(revSha));
                     GitTree.ls_tree(repo,ns.getString("tree").getBytes() , ns.getBoolean("recursive"), null);
                     break;
                 
                 case "ls-files":
                     repo = repoFind();
                     GitIndex index = GitIndex.index_read(repo);
-                    if (ns.getBoolean("--verbose")) {
+                    if (ns.getBoolean("verbose")) {
                         System.out.println("print something here");
                     }
+                    // TODO: add shi
                     for (var e: index.entries) {
                         System.out.println(e.name);
-                        if (ns.getBoolean("--verbose")) {
+                        if (ns.getBoolean("verbose")) {
                            Map<Integer, String> entryTypeMap = Map.of(
                             0b1000, "regular file",
                             0b1010, "symlink",
@@ -298,6 +372,43 @@ public class libmijun {
                     index = GitIndex.index_read(repo);
 
                     break;
+                
+                case "add":
+                    repo = repoFind();
+                    GitIndex.add(repo, ns.getList("paths"));
+                    break;
+
+                case "write-tree":
+                    repo = repoFind();
+                    index = GitIndex.index_read(repo);
+                    byte[] treeSha = GitTree.tree_from_index(repo, index);
+                    System.out.println(toHex(treeSha));
+                    break;
+
+                case "commit":
+                    repo = repoFind();
+                    GitIndex index2 = GitIndex.index_read(repo);
+                    byte[] tree = GitTree.tree_from_index(repo, index2);
+
+                    byte[] parent = null;
+                    try {
+                        parent = GitObject.object_find(repo, "HEAD", null, false);
+                    } catch (Exception e) {
+                        parent = null;
+                    }
+
+                    byte[] commitSha = GitCommit.commit_create(
+                        repo,
+                        tree,
+                        parent == null ? List.of() : List.of(parent),
+                        ns.getString("m")
+                    );
+
+                    GitRef.refCreate(repo, "heads/master", commitSha);
+                    System.out.println(toHex(commitSha));
+                    break;
+
+
                 default:
                     System.err.println("Bad command: " + command);
                     System.exit(1);
@@ -449,7 +560,7 @@ public class libmijun {
     
     static void cat_file(GitRepository repo, byte[] objByte, byte[] fmt) {
         try {
-            byte[] sha = GitObject.object_find(repo, objByte, fmt, true);
+            byte[] sha = GitObject.object_find(repo, new String(objByte), fmt, true);
             GitObject obj = GitObject.object_read(repo, sha);
 
             System.out.write(obj.serialize());
@@ -472,14 +583,13 @@ public class libmijun {
                     obj = new GitCommit(data);
                     break;
                 
-                // Yet to be implemented
                 case "tree":
                     obj = new GitTree();
                     break;
                 
-                // Yet to be implemented
                 case "tag":
-                    throw new UnsupportedOperationException("Not implemented yet");
+                    obj = new GitTag();
+                    break;
         
                 default:
                     System.out.println("some shi is 100% going wrong");
@@ -521,6 +631,43 @@ public class libmijun {
         return out;
     }
 
+    // recursive function to show refs
+    static void showRef(Map<String, Object> refs, String prefix) {
+    for (var e : refs.entrySet()) {
+        if (e.getValue() instanceof byte[]) {
+            System.out.println(
+                toHex((byte[]) e.getValue()) + " " +
+                prefix + "/" + e.getKey());
+        } else {
+            showRef((Map<String, Object>) e.getValue(),
+                    prefix + "/" + e.getKey());
+            }
+        }
+    }
+    
+    // create tag
+    static void tagCreate(GitRepository repo, String name, String ref, boolean annotated) throws IOException {
+
+        byte[] sha = GitObject.object_find(
+            repo, ref, null, true);
+
+        if (annotated) {
+            GitTag tag = new GitTag();
+            tag.kvlm = new LinkedHashMap<>();
+            tag.kvlm.put("object".getBytes(), sha);
+            tag.kvlm.put("type".getBytes(), "commit".getBytes());
+            tag.kvlm.put("tag".getBytes(), name.getBytes());
+            tag.kvlm.put("tagger".getBytes(),
+                "mijun <mijun@example.com>".getBytes());
+            tag.kvlm.put(null,
+                "Annotated tag\n".getBytes());
+
+            byte[] tagSha = GitObject.object_write(tag, repo);
+            GitRef.refCreate(repo, "tags/" + name, tagSha);
+        } else {
+            GitRef.refCreate(repo, "tags/" + name, sha);
+        }
+    }
     public static String branch_get_active(GitRepository repo) {
         //String head = Files.readString("HEAD");
 
@@ -630,40 +777,97 @@ public class libmijun {
        TEMPORARY INITIAL COMMIT CREATION
     */
 
-    // {Arjun, I can't test commit and log until unit 9, so I have put this temporary func to test the workings up till unit 5}
+    // public static void cmd_status_branch(GitRepository repo) {
+    //     String branch = branch_get_active(repo);
+    //     if (branch != null) {
+    //         System.out.println("On branch" + branch);
+    //     } else {
+    //         System.out.println("HEAD detached at" + GitObject.object_find(repo, null, null, false));
+    //     }
+    // }
 
-    /*
-       if command - ./mijun log - outputs
-       
-       digraph log {
-       node [shape=box]
-        c_<sha> [label="<shortsha>: Initial commit"]
-       }
+    // public static void cmd_status_head_index(GitRepository repo, GitIndex index) {
+    //     System.out.println("Changes to be committed: ");
 
-       Unit 5 has executed right
-    */
-    static void createInitialCommit(GitRepository repo) throws IOException {
-        String treeSha = "0000000000000000000000000000000000000001"; 
-        String commitContent = "tree " + treeSha + "\n\nInitial commit\n";
+    //     Map<Path, byte[]> head = GitTree.tree_to_dict(repo, "HEAD".getBytes(), "");
+    //     for (var entry: index.entries) {
+    //         if (head.containsKey(Paths.get(entry.name))) {
+    //             if (head.get(Paths.get(entry.name)) != entry.sha.getBytes()) {
+    //                 System.out.println(" modified:" + entry.name);
+    //             }
+    //             head.remove(Paths.get(entry.name));
+    //         } else {
+    //             System.out.println(" added: " +  entry.name);
+    //         }
+    //     }
 
-        //Create GitCommit object
-        GitCommit commit = new GitCommit(commitContent.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    //     for (var entry: head.keySet()) {
+    //         System.out.println(" deleted: " + entry);
+    //     }
+    // }
 
-        // Write commit to object store
-        byte[] sha = GitObject.object_write(commit, repo);
-        String shaHex = toHex(sha);
+    // public void cmd_status_index_worktree(GitRepository repo, GitIndex index) {
+    //     try {
+    //         System.out.println("Changes not staged for commit:");
+    //         GitIgnore ignore = new GitIgnore(null, null);
+    //         ignore = ignore.gitignore_read(repo);
 
-        // Ensure refs/heads/master - should print master 
-        Path headPath = repoPath(repo, "refs", "heads", "master");
-        if (!Files.exists(headPath.getParent())) {
-            Files.createDirectories(headPath.getParent());
-        }
-        Files.writeString(headPath, shaHex + "\n");
+    //         String gitdir_prefix = repo.gitDir.toString() + File.separator;
 
-        // update HEAD file to point to master if not already
-        Path headFile = repoPath(repo, "HEAD");
-        Files.writeString(headFile, "ref: refs/heads/master\n");
+    //         List<String> all_files = new ArrayList<>();
+    //         try (Stream<Path> stream = Files.walk(repo.workTree)) {
+    //             for (Path fullPath: stream.filter(Files::isRegularFile).toList()) {
+    //                 if (fullPath.startsWith(repo.gitDir)) {
+    //                     continue;
+    //                 }
 
-        System.out.println("Created initial commit: " + shaHex);
-    }
+    //                 Path relPath = repo.workTree.relativize(fullPath);
+    //                 all_files.add(relPath.toString());
+    //             }
+    //         } catch (IOException e) {
+    //             System.out.println("err no bueno");
+    //         }
+
+    //         for (var entry: index.entries) {
+    //             Path full_path = Path.of(repo.workTree.toString(), entry.name);
+
+    //             if (Files.notExists(full_path)) {
+    //                 System.out.println(" deleted: " + entry.name);
+    //             } else {
+    //                 BasicFileAttributes st = Files.readAttributes(full_path, BasicFileAttributes.class);
+    //                 long ctime_ns = entry.ctime.getEpochSecond() * 1_000_000_000L + entry.ctime.getNano();
+    //                 long mtime_ns = entry.mtime.getEpochSecond() * 1_000_000_000L + entry.mtime.getNano();
+
+    //                 Instant ctimeInstant = st.creationTime().toInstant();
+    //                 Instant mtimeInstant = st.lastModifiedTime().toInstant();
+
+    //                 long fileCtimeNs = ctimeInstant.getEpochSecond() * 1_000_000_000L + ctimeInstant.getNano();
+    //                 long fileMtimeNs = mtimeInstant.getEpochSecond() * 1_000_000_000L + mtimeInstant.getNano();
+
+    //                 if (fileCtimeNs != ctime_ns || fileMtimeNs != mtime_ns) {
+    //                 byte[] fd = Files.readAllBytes(full_path);
+    //                 byte[] new_sha = object_hash(full_path, "blob".getBytes(), null);
+    //                 boolean same = entry.sha.equals(new_sha);
+
+    //                 if (!same) {
+    //                     System.out.println(" modified:" + entry.name);
+    //                 }
+    //                 }
+    //             }
+    //             if (all_files.contains(entry.name)) {
+    //                 all_files.remove(entry.name);
+    //             }
+    //         }
+    //         System.out.println();
+    //         System.out.println("Untracked files:");
+
+    //         for (var f: all_files) {
+    //             if (ignore.check_ignore(ignore, Path.of(f))) {
+    //                 System.out.println("" + f);
+    //             }
+    //         }
+    //     } catch (IOException e) {
+    //         System.out.println("no bueno");
+    //     }
+    // }
 }
